@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: meditrack-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: meditrack_user
+      POSTGRES_PASSWORD: meditrack_password
+      POSTGRES_DB: meditrack_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - meditrack_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  meditrack_postgres_data:
