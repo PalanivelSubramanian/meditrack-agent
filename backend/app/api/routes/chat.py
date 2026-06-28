@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app.agents.patient_agent import PatientAgent
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
@@ -126,10 +127,63 @@ def chat_message(
         )
 
     if access_decision.status == "access_granted":
-        assistant_message = (
-            "You are verified. I can help with patient search. "
-            "Next step will connect this intent to the Patient Search Tool."
-        )
+        if intent == "search_patient":
+            patient_query = intent_result.entities.get("patient_query")
+
+            if not patient_query:
+                assistant_message = (
+                    "Please provide a patient name, phone number, date of birth, "
+                    "or patient number to search."
+                )
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="missing_patient_query",
+                        data={
+                            "required_permission": access_decision.required_permission,
+                        },
+                    ),
+                )
+
+            patient_agent = PatientAgent()
+            patient_result = patient_agent.search_patient(db, patient_query)
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=patient_result.message,
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=patient_result.message,
+                intent=intent,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=patient_result.ui_type,
+                    data={
+                        **patient_result.ui_data,
+                        "required_permission": access_decision.required_permission,
+                        "user_role": user.role.role_name if user else None,
+                    },
+                ),
+            )
+
+        assistant_message = "Access granted, but no workflow is implemented for this intent yet."
 
         save_chat_message(
             db=db,
@@ -145,7 +199,7 @@ def chat_message(
             intent=intent,
             requires_auth=False,
             ui=ChatUIResponse(
-                type="protected_intent_allowed",
+                type="workflow_not_implemented",
                 data={
                     "required_permission": access_decision.required_permission,
                     "user_role": user.role.role_name if user else None,
