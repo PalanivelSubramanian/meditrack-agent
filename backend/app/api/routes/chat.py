@@ -6,11 +6,7 @@ from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
 from app.schemas.chat import ChatMessageRequest, ChatMessageResponse, ChatUIResponse
-from app.services.access_control_service import (
-    get_required_permission,
-    has_permission,
-    is_protected_intent,
-)
+from app.agents.access_control_agent import AccessControlAgent
 from app.services.auth_service import get_user_permissions
 from app.services.chat_service import get_or_create_chat_session, save_chat_message
 from app.services.intent_service import detect_intent
@@ -52,6 +48,13 @@ def chat_message(
     intent_result = detect_intent(payload.message)
     intent = intent_result.intent
 
+    access_agent = AccessControlAgent()
+    access_decision = access_agent.evaluate(
+        intent=intent,
+        user=user,
+        permissions=permissions,
+    )
+
     session_type = "clinic_operations" if user else "public_health_chat"
 
     chat_session = get_or_create_chat_session(
@@ -69,64 +72,60 @@ def chat_message(
         intent=intent,
     )
 
-    if is_protected_intent(intent):
-        required_permission = get_required_permission(intent)
+    if access_decision.status == "auth_required":
+        assistant_message = (
+            "Patient search requires authorized clinic access. "
+            "Please enter your Employee ID to start secure staff verification."
+        )
 
-        if user is None:
-            assistant_message = (
-                "Patient search requires authorized clinic access. "
-                "Please enter your Employee ID to start secure staff verification."
-            )
+        save_chat_message(
+            db=db,
+            session_id=chat_session.id,
+            sender="assistant",
+            message=assistant_message,
+            intent=intent,
+        )
 
-            save_chat_message(
-                db=db,
-                session_id=chat_session.id,
-                sender="assistant",
-                message=assistant_message,
-                intent=intent,
-            )
+        return ChatMessageResponse(
+            session_id=chat_session.id,
+            message=assistant_message,
+            intent=intent,
+            requires_auth=True,
+            ui=ChatUIResponse(
+                type="auth_required",
+                data={
+                    "required_permission": access_decision.required_permission,
+                    "auth_method": "employee_id_totp",
+                    "intent_entities": intent_result.entities,
+                },
+            ),
+        )
 
-            return ChatMessageResponse(
-                session_id=chat_session.id,
-                message=assistant_message,
-                intent=intent,
-                requires_auth=True,
-                ui=ChatUIResponse(
-                    type="auth_required",
-                    data={
-                        "required_permission": required_permission,
-                        "auth_method": "employee_id_totp",
-                        "intent_entities": intent_result.entities,
-                    },
-                ),
-            )
+    if access_decision.status == "access_denied":
+        assistant_message = access_decision.message
 
-        if required_permission and not has_permission(permissions, required_permission):
-            assistant_message = (
-                "Access denied. Your role does not have permission to perform this action."
-            )
+        save_chat_message(
+            db=db,
+            session_id=chat_session.id,
+            sender="assistant",
+            message=assistant_message,
+            intent=intent,
+        )
 
-            save_chat_message(
-                db=db,
-                session_id=chat_session.id,
-                sender="assistant",
-                message=assistant_message,
-                intent=intent,
-            )
+        return ChatMessageResponse(
+            session_id=chat_session.id,
+            message=assistant_message,
+            intent=intent,
+            requires_auth=False,
+            ui=ChatUIResponse(
+                type="access_denied",
+                data={
+                    "required_permission": access_decision.required_permission,
+                },
+            ),
+        )
 
-            return ChatMessageResponse(
-                session_id=chat_session.id,
-                message=assistant_message,
-                intent=intent,
-                requires_auth=False,
-                ui=ChatUIResponse(
-                    type="access_denied",
-                    data={
-                        "required_permission": required_permission,
-                    },
-                ),
-            )
-
+    if access_decision.status == "access_granted":
         assistant_message = (
             "You are verified. I can help with patient search. "
             "Next step will connect this intent to the Patient Search Tool."
@@ -148,8 +147,8 @@ def chat_message(
             ui=ChatUIResponse(
                 type="protected_intent_allowed",
                 data={
-                    "required_permission": required_permission,
-                    "user_role": user.role.role_name,
+                    "required_permission": access_decision.required_permission,
+                    "user_role": user.role.role_name if user else None,
                     "intent_entities": intent_result.entities,
                 },
             ),
