@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time, timedelta
 
 import pyotp
 from sqlalchemy.orm import Session
@@ -6,7 +6,8 @@ from sqlalchemy.orm import Session
 from app.db.database import SessionLocal
 from app.models.auth import Permission, Role, RolePermission, User
 from app.models.patient import Patient
-
+from app.models.appointment import Appointment, AppointmentHistory
+from app.models.doctor import Doctor, DoctorAvailability
 
 ROLES = ["receptionist", "doctor", "admin"]
 
@@ -91,6 +92,27 @@ DEMO_PATIENTS = [
         "phone": "5553332044",
         "email": "aisha.rahman@example.com",
         "address": "21 Park Avenue",
+    },
+]
+
+DEMO_DOCTORS = [
+    {
+        "full_name": "Dr. Arjun Mehta",
+        "specialization": "cardiology",
+        "department": "cardiology",
+        "status": "active",
+    },
+    {
+        "full_name": "Dr. Priya Nair",
+        "specialization": "cardiology",
+        "department": "cardiology",
+        "status": "active",
+    },
+    {
+        "full_name": "Dr. Kavita Rao",
+        "specialization": "dermatology",
+        "department": "dermatology",
+        "status": "active",
     },
 ]
 
@@ -219,6 +241,120 @@ def seed_patients(db: Session) -> None:
 
     db.commit()
 
+def seed_doctors(db: Session) -> list[Doctor]:
+    doctors: list[Doctor] = []
+
+    for doctor_data in DEMO_DOCTORS:
+        existing_doctor = (
+            db.query(Doctor)
+            .filter(Doctor.full_name == doctor_data["full_name"])
+            .first()
+        )
+
+        if existing_doctor:
+            doctors.append(existing_doctor)
+            continue
+
+        doctor = Doctor(**doctor_data)
+        db.add(doctor)
+        db.commit()
+        db.refresh(doctor)
+        doctors.append(doctor)
+
+    return doctors
+
+
+def seed_doctor_availability(db: Session, doctors: list[Doctor]) -> None:
+    today = date.today()
+
+    for doctor in doctors:
+        for day_offset in range(1, 8):
+            available_date = today + timedelta(days=day_offset)
+
+            existing_slot = (
+                db.query(DoctorAvailability)
+                .filter(
+                    DoctorAvailability.doctor_id == doctor.id,
+                    DoctorAvailability.available_date == available_date,
+                    DoctorAvailability.start_time == time(9, 0),
+                    DoctorAvailability.end_time == time(17, 0),
+                )
+                .first()
+            )
+
+            if existing_slot:
+                continue
+
+            slot = DoctorAvailability(
+                doctor_id=doctor.id,
+                available_date=available_date,
+                start_time=time(9, 0),
+                end_time=time(17, 0),
+                status="available",
+            )
+
+            db.add(slot)
+
+    db.commit()
+
+def seed_sample_appointments(db: Session) -> None:
+    today = date.today()
+    appointment_date = today + timedelta(days=1)
+
+    patient = (
+        db.query(Patient)
+        .filter(Patient.patient_number == "P10001")
+        .first()
+    )
+
+    doctor = (
+        db.query(Doctor)
+        .filter(Doctor.full_name == "Dr. Arjun Mehta")
+        .first()
+    )
+
+    if not patient or not doctor:
+        return
+
+    existing_appointment = (
+        db.query(Appointment)
+        .filter(
+            Appointment.patient_id == patient.id,
+            Appointment.doctor_id == doctor.id,
+            Appointment.appointment_date == appointment_date,
+            Appointment.start_time == time(10, 0),
+        )
+        .first()
+    )
+
+    if existing_appointment:
+        return
+
+    appointment = Appointment(
+        patient_id=patient.id,
+        doctor_id=doctor.id,
+        appointment_date=appointment_date,
+        start_time=time(10, 0),
+        end_time=time(10, 30),
+        reason="Existing cardiology follow-up",
+        status="scheduled",
+        created_by=None,
+    )
+
+    db.add(appointment)
+    db.commit()
+    db.refresh(appointment)
+
+    history = AppointmentHistory(
+        appointment_id=appointment.id,
+        action="created",
+        old_value=None,
+        new_value="Seeded sample appointment at 10:00",
+        changed_by=None,
+    )
+
+    db.add(history)
+    db.commit()
 
 def main() -> None:
     db = SessionLocal()
@@ -227,6 +363,11 @@ def main() -> None:
         roles = seed_roles_permissions(db)
         seed_users(db, roles)
         seed_patients(db)
+
+        doctors = seed_doctors(db)
+        seed_doctor_availability(db, doctors)
+        seed_sample_appointments(db)
+
         print("\nSeed completed successfully.")
     finally:
         db.close()
