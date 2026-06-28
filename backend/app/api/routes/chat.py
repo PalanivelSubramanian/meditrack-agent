@@ -49,7 +49,8 @@ def chat_message(
 ):
     user, permissions = get_optional_user_context(credentials, db)
 
-    intent = detect_intent(payload.message)
+    intent_result = detect_intent(payload.message)
+    intent = intent_result.intent
 
     session_type = "clinic_operations" if user else "public_health_chat"
 
@@ -95,6 +96,7 @@ def chat_message(
                     data={
                         "required_permission": required_permission,
                         "auth_method": "employee_id_totp",
+                        "intent_entities": intent_result.entities,
                     },
                 ),
             )
@@ -148,6 +150,7 @@ def chat_message(
                 data={
                     "required_permission": required_permission,
                     "user_role": user.role.role_name,
+                    "intent_entities": intent_result.entities,
                 },
             ),
         )
