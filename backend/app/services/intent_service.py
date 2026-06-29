@@ -13,6 +13,11 @@ PATIENT_SEARCH_PATTERNS = [
     r"^find\s+(?P<query>.+)$",
 ]
 
+BOOK_APPOINTMENT_PATTERNS = [
+    r"^book appointment for (?P<patient_query>.+?) with (?P<specialization>\w+) tomorrow at (?P<time>\d{1,2}:\d{2})$",
+    r"^schedule appointment for (?P<patient_query>.+?) with (?P<specialization>\w+) tomorrow at (?P<time>\d{1,2}:\d{2})$",
+]
+
 PUBLIC_HEALTH_KEYWORDS = [
     "headache",
     "fever",
@@ -41,6 +46,20 @@ def clean_patient_query(query: str) -> str:
 
 def detect_intent(message: str) -> IntentResult:
     normalized = message.lower().strip()
+
+    for pattern in BOOK_APPOINTMENT_PATTERNS:
+        match = re.match(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            return IntentResult(
+                intent="book_appointment",
+                confidence=0.90,
+                entities={
+                    "patient_query": clean_patient_query(match.group("patient_query")),
+                    "specialization": match.group("specialization").lower().strip(),
+                    "date_text": "tomorrow",
+                    "time": match.group("time"),
+                },
+            )
 
     for pattern in PATIENT_SEARCH_PATTERNS:
         match = re.match(pattern, normalized, flags=re.IGNORECASE)

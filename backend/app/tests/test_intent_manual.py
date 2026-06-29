@@ -9,6 +9,7 @@ examples = [
     "Find headache causes",
     "What causes headache?",
     "hello",
+    "Book appointment for Aisha Rahman with cardiology tomorrow at 09:00",
 ]
 
 

@@ -3,6 +3,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
 from app.agents.patient_agent import PatientAgent
+from app.agents.scheduling_agent import SchedulingAgent
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
@@ -183,6 +184,37 @@ def chat_message(
                 ),
             )
 
+        if intent == "book_appointment":
+            scheduling_agent = SchedulingAgent()
+            scheduling_result = scheduling_agent.book_from_entities(
+                db=db,
+                entities=intent_result.entities,
+                created_by=user.id if user else None,
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=scheduling_result.message,
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=scheduling_result.message,
+                intent=intent,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=scheduling_result.ui_type,
+                    data={
+                        **scheduling_result.ui_data,
+                        "required_permission": access_decision.required_permission,
+                        "user_role": user.role.role_name if user else None,
+                    },
+                ),
+            )
+        
         assistant_message = "Access granted, but no workflow is implemented for this intent yet."
 
         save_chat_message(
