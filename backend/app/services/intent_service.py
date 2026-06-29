@@ -33,6 +33,13 @@ PUBLIC_HEALTH_KEYWORDS = [
     "pain",
 ]
 
+AVAILABILITY_PATTERNS = [
+    r"^which (?P<specialization>\w+) doctors are available tomorrow\??$",
+    r"^which (?P<specialization>\w+) are available tomorrow\??$",
+    r"^check (?P<specialization>\w+) availability tomorrow$",
+    r"^show (?P<specialization>\w+) slots tomorrow$",
+    r"^find (?P<specialization>\w+) availability tomorrow$",
+]
 
 def clean_patient_query(query: str) -> str:
     query = query.strip()
@@ -43,6 +50,19 @@ def clean_patient_query(query: str) -> str:
 
     return " ".join(query.split())
 
+def normalize_specialization(value: str) -> str:
+    value = value.lower().strip()
+
+    mapping = {
+        "cardiologist": "cardiology",
+        "cardiologists": "cardiology",
+        "cardiology": "cardiology",
+        "dermatologist": "dermatology",
+        "dermatologists": "dermatology",
+        "dermatology": "dermatology",
+    }
+
+    return mapping.get(value, value)
 
 def detect_intent(message: str) -> IntentResult:
     normalized = message.lower().strip()
@@ -58,6 +78,24 @@ def detect_intent(message: str) -> IntentResult:
                     "specialization": match.group("specialization").lower().strip(),
                     "date_text": "tomorrow",
                     "time": match.group("time"),
+                },
+            )
+
+    for pattern in AVAILABILITY_PATTERNS:
+        match = re.match(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            specialization = normalize_specialization(match.group("specialization"))
+
+            # Normalize common plural words.
+            if specialization.endswith("s"):
+                specialization = specialization[:-1]
+
+            return IntentResult(
+                intent="check_doctor_availability",
+                confidence=0.90,
+                entities={
+                    "specialization": specialization,
+                    "date_text": "tomorrow",
                 },
             )
 

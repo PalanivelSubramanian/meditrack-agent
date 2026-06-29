@@ -10,6 +10,9 @@ examples = [
     "What causes headache?",
     "hello",
     "Book appointment for Aisha Rahman with cardiology tomorrow at 09:00",
+    "Which cardiologists are available tomorrow?",
+    "Check cardiology availability tomorrow",
+    "Show dermatology slots tomorrow",
 ]
 
 

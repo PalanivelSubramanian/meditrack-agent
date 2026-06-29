@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+from datetime import date, timedelta
 
 from app.agents.patient_agent import PatientAgent
 from app.agents.scheduling_agent import SchedulingAgent
+from app.agents.doctor_availability_agent import DoctorAvailabilityAgent
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
@@ -215,6 +217,97 @@ def chat_message(
                 ),
             )
         
+        if intent == "check_doctor_availability":
+            specialization = intent_result.entities.get("specialization")
+            date_text = intent_result.entities.get("date_text")
+
+            if not specialization or not date_text:
+                assistant_message = (
+                    "Please provide a specialization and date. "
+                    "Example: Check cardiology availability tomorrow."
+                )
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="availability_missing_details",
+                        data={
+                            "intent_entities": intent_result.entities,
+                            "required_permission": access_decision.required_permission,
+                            "user_role": user.role.role_name if user else None,
+                        },
+                    ),
+                )
+
+            if date_text == "tomorrow":
+                target_date = date.today() + timedelta(days=1)
+            else:
+                assistant_message = "For now, I can check availability for tomorrow only."
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="availability_unsupported_date",
+                        data={
+                            "date_text": date_text,
+                            "required_permission": access_decision.required_permission,
+                            "user_role": user.role.role_name if user else None,
+                        },
+                    ),
+                )
+
+            availability_agent = DoctorAvailabilityAgent()
+            availability_result = availability_agent.find_slots(
+                db=db,
+                specialization=specialization,
+                target_date=target_date,
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=availability_result.message,
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=availability_result.message,
+                intent=intent,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=availability_result.ui_type,
+                    data={
+                        **availability_result.ui_data,
+                        "required_permission": access_decision.required_permission,
+                        "user_role": user.role.role_name if user else None,
+                    },
+                ),
+            )
+
         assistant_message = "Access granted, but no workflow is implemented for this intent yet."
 
         save_chat_message(
