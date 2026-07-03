@@ -20,6 +20,8 @@ class Doctor(Base):
 
     availability_slots = relationship("DoctorAvailability", back_populates="doctor")
     appointments = relationship("Appointment", back_populates="doctor")
+    visits = relationship("PatientVisit", back_populates="doctor")
+    clinical_notes = relationship("PatientClinicalNote", back_populates="doctor")
 
 
 class DoctorAvailability(Base):

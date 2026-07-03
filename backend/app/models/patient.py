@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Date, DateTime, Integer, String
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 
 from app.db.database import Base
 
@@ -20,3 +21,8 @@ class Patient(Base):
     address = Column(String(255), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    visits = relationship("PatientVisit", back_populates="patient")
+    diagnoses = relationship("PatientDiagnosis", back_populates="patient")
+    medications = relationship("PatientMedication", back_populates="patient")
+    clinical_notes = relationship("PatientClinicalNote", back_populates="patient")
