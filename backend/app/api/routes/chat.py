@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from app.agents.patient_agent import PatientAgent
 from app.agents.scheduling_agent import SchedulingAgent
 from app.agents.doctor_availability_agent import DoctorAvailabilityAgent
+from app.agents.patient_history_agent import PatientHistoryAgent
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
@@ -221,6 +222,58 @@ def chat_message(
                         "user_role": user.role.role_name if user else None,
                     },
                 ),
+            )
+
+        if intent == "view_patient_history":
+            patient_query = intent_result.entities.get("patient_query", "")
+
+            patient_history_agent = PatientHistoryAgent()
+            history_result = patient_history_agent.get_history_for_query(
+                db=db,
+                patient_query=patient_query,
+            )
+
+            patient_entity_id = None
+
+            if history_result["ui_type"] == "patient_history":
+                patient_entity_id = history_result["ui_data"]["patient"]["patient_id"]
+
+            log_audit_event(
+                db=db,
+                action_type="PATIENT_HISTORY_VIEW",
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=patient_entity_id,
+                permission_checked=access_decision.required_permission,
+                access_granted=history_result["ui_type"] == "patient_history",
+                details=(
+                    f"Patient history workflow result={history_result['ui_type']}, "
+                    f"patient_query='{patient_query}'"
+                ),
+            )
+
+            assistant_message = ChatMessage(
+                session_id=chat_session.id,
+                sender="assistant",
+                message_text=history_result["message"],
+                intent=intent,
+                ui_type=history_result["ui_type"],
+                ui_data=history_result["ui_data"],
+            )
+
+            db.add(assistant_message)
+            db.commit()
+            db.refresh(assistant_message)
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=history_result["message"],
+                intent=intent,
+                intent_entities=intent_result.entities,
+                ui={
+                    "type": history_result["ui_type"],
+                    "data": history_result["ui_data"],
+                },
             )
 
         if intent == "book_appointment":
