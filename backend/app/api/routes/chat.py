@@ -16,6 +16,7 @@ from app.services.auth_service import get_user_permissions
 from app.services.chat_service import get_or_create_chat_session, save_chat_message
 from app.services.intent_service import detect_intent
 from app.services.audit_service import log_audit_event
+from app.models.chat import ChatSession
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -252,18 +253,13 @@ def chat_message(
                 ),
             )
 
-            assistant_message = ChatMessage(
+            save_chat_message(
+                db=db,
                 session_id=chat_session.id,
                 sender="assistant",
-                message_text=history_result["message"],
+                message=history_result["message"],
                 intent=intent,
-                ui_type=history_result["ui_type"],
-                ui_data=history_result["ui_data"],
             )
-
-            db.add(assistant_message)
-            db.commit()
-            db.refresh(assistant_message)
 
             return ChatMessageResponse(
                 session_id=chat_session.id,
