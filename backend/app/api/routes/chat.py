@@ -14,6 +14,7 @@ from app.agents.access_control_agent import AccessControlAgent
 from app.services.auth_service import get_user_permissions
 from app.services.chat_service import get_or_create_chat_session, save_chat_message
 from app.services.intent_service import detect_intent
+from app.services.audit_service import log_audit_event
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -90,6 +91,17 @@ def chat_message(
             intent=intent,
         )
 
+        log_audit_event(
+            db=db,
+            action_type="AUTH_REQUIRED",
+            user_id=None,
+            entity_type="chat",
+            entity_id=chat_session.id,
+            permission_checked=access_decision.required_permission,
+            access_granted=False,
+            details=f"Unauthenticated request blocked for intent={intent}",
+        )
+
         return ChatMessageResponse(
             session_id=chat_session.id,
             message=assistant_message,
@@ -116,6 +128,17 @@ def chat_message(
             intent=intent,
         )
 
+        log_audit_event(
+            db=db,
+            action_type="ACCESS_DENIED",
+            user_id=user.id if user else None,
+            entity_type="chat",
+            entity_id=chat_session.id,
+            permission_checked=access_decision.required_permission,
+            access_granted=False,
+            details=f"Access denied for intent={intent}",
+        )
+        
         return ChatMessageResponse(
             session_id=chat_session.id,
             message=assistant_message,
@@ -163,6 +186,20 @@ def chat_message(
             patient_agent = PatientAgent()
             patient_result = patient_agent.search_patient(db, patient_query)
 
+            log_audit_event(
+                db=db,
+                action_type="PATIENT_SEARCH",
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=None,
+                permission_checked=access_decision.required_permission,
+                access_granted=True,
+                details=(
+                    f"Patient search query='{patient_query}', "
+                    f"result_type={patient_result.ui_type}"
+                ),
+            )
+
             save_chat_message(
                 db=db,
                 session_id=chat_session.id,
@@ -192,6 +229,20 @@ def chat_message(
                 db=db,
                 entities=intent_result.entities,
                 created_by=user.id if user else None,
+            )
+
+            log_audit_event(
+                db=db,
+                action_type="BOOK_APPOINTMENT",
+                user_id=user.id if user else None,
+                entity_type="appointment",
+                entity_id=scheduling_result.ui_data.get("appointment_id"),
+                permission_checked=access_decision.required_permission,
+                access_granted=scheduling_result.ui_type == "booking_confirmed",
+                details=(
+                    f"Booking workflow result={scheduling_result.ui_type}, "
+                    f"entities={intent_result.entities}"
+                ),
             )
 
             save_chat_message(
@@ -283,6 +334,21 @@ def chat_message(
                 db=db,
                 specialization=specialization,
                 target_date=target_date,
+            )
+
+            log_audit_event(
+                db=db,
+                action_type="CHECK_DOCTOR_AVAILABILITY",
+                user_id=user.id if user else None,
+                entity_type="doctor_availability",
+                entity_id=None,
+                permission_checked=access_decision.required_permission,
+                access_granted=True,
+                details=(
+                    f"Availability lookup specialization={specialization}, "
+                    f"target_date={target_date.isoformat()}, "
+                    f"result_type={availability_result.ui_type}"
+                ),
             )
 
             save_chat_message(

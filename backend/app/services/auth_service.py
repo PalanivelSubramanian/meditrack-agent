@@ -9,9 +9,11 @@ from app.models.auth import AuthSession, Permission, RolePermission, User
 
 
 def get_user_by_employee_id(db: Session, employee_id: str) -> User | None:
+    normalized_employee_id = employee_id.strip().upper()
+
     return (
         db.query(User)
-        .filter(User.employee_id == employee_id, User.status == "active")
+        .filter(User.employee_id == normalized_employee_id, User.status == "active")
         .first()
     )
 
