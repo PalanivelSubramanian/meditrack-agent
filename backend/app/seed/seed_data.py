@@ -8,6 +8,12 @@ from app.models.auth import Permission, Role, RolePermission, User
 from app.models.patient import Patient
 from app.models.appointment import Appointment, AppointmentHistory
 from app.models.doctor import Doctor, DoctorAvailability
+from app.models.clinical import (
+    PatientVisit,
+    PatientDiagnosis,
+    PatientMedication,
+    PatientClinicalNote,
+)
 
 ROLES = ["receptionist", "doctor", "admin"]
 
@@ -356,6 +362,256 @@ def seed_sample_appointments(db: Session) -> None:
     db.add(history)
     db.commit()
 
+def seed_clinical_history(db: Session):
+    patients = {
+        patient.patient_number: patient
+        for patient in db.query(Patient).all()
+    }
+
+    doctors = {
+        doctor.full_name: doctor
+        for doctor in db.query(Doctor).all()
+    }
+
+    required_patients = ["P10001", "P10002", "P10003"]
+    missing_patients = [p for p in required_patients if p not in patients]
+
+    if missing_patients:
+        print(f"Skipping clinical history seed. Missing patients: {missing_patients}")
+        return
+
+    if not doctors:
+        print("Skipping clinical history seed. No doctors found.")
+        return
+
+    dr_arjun = doctors.get("Dr. Arjun Mehta")
+    dr_priya = doctors.get("Dr. Priya Nair")
+    dr_kavita = doctors.get("Dr. Kavita Rao")
+
+    # Make this seed idempotent for demo purposes.
+    existing_visit = (
+        db.query(PatientVisit)
+        .filter(PatientVisit.patient_id == patients["P10003"].id)
+        .first()
+    )
+
+    if existing_visit:
+        print("Clinical history already seeded. Skipping.")
+        return
+
+    john_older = patients["P10001"]
+    john_younger = patients["P10002"]
+    aisha = patients["P10003"]
+
+    today = date.today()
+
+    # -------------------------
+    # P10001 — John Smith, older
+    # -------------------------
+    john_visit_1 = PatientVisit(
+        patient_id=john_older.id,
+        doctor_id=dr_arjun.id if dr_arjun else None,
+        visit_date=today - timedelta(days=120),
+        visit_type="consultation",
+        reason_for_visit="Intermittent chest discomfort and elevated blood pressure",
+        summary="Patient reported occasional chest tightness during exertion. Blood pressure was elevated. Lifestyle changes and follow-up were advised.",
+    )
+
+    john_visit_2 = PatientVisit(
+        patient_id=john_older.id,
+        doctor_id=dr_priya.id if dr_priya else None,
+        visit_date=today - timedelta(days=35),
+        visit_type="follow_up",
+        reason_for_visit="Blood pressure follow-up",
+        summary="Blood pressure improved but still above target. Medication adherence reviewed. No acute chest pain reported.",
+    )
+
+    db.add_all([john_visit_1, john_visit_2])
+    db.flush()
+
+    db.add_all(
+        [
+            PatientDiagnosis(
+                patient_id=john_older.id,
+                visit_id=john_visit_1.id,
+                diagnosis_name="Hypertension",
+                diagnosis_code="I10",
+                status="active",
+                diagnosed_on=today - timedelta(days=120),
+            ),
+            PatientDiagnosis(
+                patient_id=john_older.id,
+                visit_id=john_visit_1.id,
+                diagnosis_name="Chest pain, unspecified",
+                diagnosis_code="R07.9",
+                status="resolved",
+                diagnosed_on=today - timedelta(days=120),
+            ),
+            PatientMedication(
+                patient_id=john_older.id,
+                visit_id=john_visit_1.id,
+                medication_name="Amlodipine",
+                dosage="5 mg",
+                frequency="Once daily",
+                route="oral",
+                start_date=today - timedelta(days=120),
+                status="active",
+            ),
+            PatientMedication(
+                patient_id=john_older.id,
+                visit_id=john_visit_2.id,
+                medication_name="Atorvastatin",
+                dosage="10 mg",
+                frequency="Once nightly",
+                route="oral",
+                start_date=today - timedelta(days=35),
+                status="active",
+            ),
+            PatientClinicalNote(
+                patient_id=john_older.id,
+                visit_id=john_visit_1.id,
+                doctor_id=dr_arjun.id if dr_arjun else None,
+                note_type="clinical",
+                note_text="Advised home BP monitoring, low-sodium diet, and follow-up in 4 weeks. ECG did not show acute ischemic changes.",
+            ),
+            PatientClinicalNote(
+                patient_id=john_older.id,
+                visit_id=john_visit_2.id,
+                doctor_id=dr_priya.id if dr_priya else None,
+                note_type="follow_up",
+                note_text="Patient reports improved exercise tolerance. Continue antihypertensive therapy and review lipid panel at next visit.",
+            ),
+        ]
+    )
+
+    # -------------------------
+    # P10002 — John Smith, younger
+    # -------------------------
+    younger_john_visit = PatientVisit(
+        patient_id=john_younger.id,
+        doctor_id=dr_kavita.id if dr_kavita else None,
+        visit_date=today - timedelta(days=18),
+        visit_type="consultation",
+        reason_for_visit="Persistent skin rash on forearms",
+        summary="Patient presented with itchy rash after possible detergent exposure. No fever or systemic symptoms.",
+    )
+
+    db.add(younger_john_visit)
+    db.flush()
+
+    db.add_all(
+        [
+            PatientDiagnosis(
+                patient_id=john_younger.id,
+                visit_id=younger_john_visit.id,
+                diagnosis_name="Contact dermatitis",
+                diagnosis_code="L25.9",
+                status="active",
+                diagnosed_on=today - timedelta(days=18),
+            ),
+            PatientMedication(
+                patient_id=john_younger.id,
+                visit_id=younger_john_visit.id,
+                medication_name="Hydrocortisone cream",
+                dosage="1%",
+                frequency="Apply twice daily for 7 days",
+                route="topical",
+                start_date=today - timedelta(days=18),
+                end_date=today - timedelta(days=11),
+                status="completed",
+            ),
+            PatientClinicalNote(
+                patient_id=john_younger.id,
+                visit_id=younger_john_visit.id,
+                doctor_id=dr_kavita.id if dr_kavita else None,
+                note_type="clinical",
+                note_text="Likely irritant contact dermatitis. Advised avoiding suspected detergent and returning if rash spreads or worsens.",
+            ),
+        ]
+    )
+
+    # -------------------------
+    # P10003 — Aisha Rahman
+    # -------------------------
+    aisha_visit_1 = PatientVisit(
+        patient_id=aisha.id,
+        doctor_id=dr_arjun.id if dr_arjun else None,
+        visit_date=today - timedelta(days=75),
+        visit_type="consultation",
+        reason_for_visit="Palpitations and fatigue",
+        summary="Patient reported episodic palpitations and fatigue. Basic cardiac evaluation was reassuring. Thyroid testing was recommended.",
+    )
+
+    aisha_visit_2 = PatientVisit(
+        patient_id=aisha.id,
+        doctor_id=dr_priya.id if dr_priya else None,
+        visit_date=today - timedelta(days=20),
+        visit_type="follow_up",
+        reason_for_visit="Follow-up after lab review",
+        summary="Symptoms improved. Lab review suggested mild iron deficiency. Supplementation and dietary counseling provided.",
+    )
+
+    db.add_all([aisha_visit_1, aisha_visit_2])
+    db.flush()
+
+    db.add_all(
+        [
+            PatientDiagnosis(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_1.id,
+                diagnosis_name="Palpitations",
+                diagnosis_code="R00.2",
+                status="monitoring",
+                diagnosed_on=today - timedelta(days=75),
+            ),
+            PatientDiagnosis(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_2.id,
+                diagnosis_name="Iron deficiency anemia, mild",
+                diagnosis_code="D50.9",
+                status="active",
+                diagnosed_on=today - timedelta(days=20),
+            ),
+            PatientMedication(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_2.id,
+                medication_name="Ferrous sulfate",
+                dosage="325 mg",
+                frequency="Once daily",
+                route="oral",
+                start_date=today - timedelta(days=20),
+                status="active",
+            ),
+            PatientMedication(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_1.id,
+                medication_name="Multivitamin",
+                dosage="One tablet",
+                frequency="Once daily",
+                route="oral",
+                start_date=today - timedelta(days=75),
+                status="active",
+            ),
+            PatientClinicalNote(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_1.id,
+                doctor_id=dr_arjun.id if dr_arjun else None,
+                note_type="clinical",
+                note_text="No syncope, chest pain, or shortness of breath reported. Advised symptom diary and follow-up after labs.",
+            ),
+            PatientClinicalNote(
+                patient_id=aisha.id,
+                visit_id=aisha_visit_2.id,
+                doctor_id=dr_priya.id if dr_priya else None,
+                note_type="follow_up",
+                note_text="Patient reports fewer palpitations. Discussed iron-rich diet and repeat CBC in 8 weeks.",
+            ),
+        ]
+    )
+
+    db.commit()
+    print("Clinical history seeded successfully.")
+
 def main() -> None:
     db = SessionLocal()
 
@@ -367,6 +623,8 @@ def main() -> None:
         doctors = seed_doctors(db)
         seed_doctor_availability(db, doctors)
         seed_sample_appointments(db)
+
+        seed_clinical_history(db)
 
         print("\nSeed completed successfully.")
     finally:
