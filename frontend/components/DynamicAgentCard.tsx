@@ -1,4 +1,4 @@
-import type { ChatUI } from "@/types/chat";
+import type { ChatUI, PatientHistoryUIData } from "@/types/chat";
 
 type Props = {
   ui: ChatUI;
@@ -176,6 +176,189 @@ function SimpleStatusCard({
   );
 }
 
+
+function PatientHistoryCard({ data }: { data: PatientHistoryUIData }) {
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+          Patient history
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">
+          {data.patient.full_name}
+        </div>
+
+        <div className="text-xs text-blue-800">
+          {data.patient.patient_number}
+          {data.patient.date_of_birth
+            ? ` · DOB ${data.patient.date_of_birth}`
+            : ""}
+          {data.patient.phone_ending
+            ? ` · Phone ending ${data.patient.phone_ending}`
+            : ""}
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <section>
+          <div className="mb-2 font-semibold">Recent visits</div>
+
+          {data.recent_visits.length === 0 ? (
+            <div className="text-blue-800">No recent visits found.</div>
+          ) : (
+            <div className="space-y-2">
+              {data.recent_visits.map((visit) => (
+                <div
+                  key={visit.id}
+                  className="rounded-xl border border-blue-100 bg-white p-3"
+                >
+                  <div className="font-medium">
+                    {visit.visit_date} · {visit.visit_type}
+                  </div>
+
+                  {visit.doctor_name && (
+                    <div className="text-xs text-blue-700">
+                      Doctor: {visit.doctor_name}
+                    </div>
+                  )}
+
+                  {visit.reason_for_visit && (
+                    <div className="mt-1 text-blue-900">
+                      Reason: {visit.reason_for_visit}
+                    </div>
+                  )}
+
+                  {visit.summary && (
+                    <div className="mt-1 text-blue-800">
+                      {visit.summary}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-2 font-semibold">Active diagnoses</div>
+
+          {data.active_diagnoses.length === 0 ? (
+            <div className="text-blue-800">No active diagnoses found.</div>
+          ) : (
+            <div className="space-y-2">
+              {data.active_diagnoses.map((diagnosis) => (
+                <div
+                  key={diagnosis.id}
+                  className="rounded-xl border border-blue-100 bg-white p-3"
+                >
+                  <div className="font-medium">
+                    {diagnosis.diagnosis_name}
+                  </div>
+
+                  <div className="text-xs text-blue-700">
+                    Status: {diagnosis.status}
+                    {diagnosis.diagnosis_code
+                      ? ` · Code: ${diagnosis.diagnosis_code}`
+                      : ""}
+                    {diagnosis.diagnosed_on
+                      ? ` · Since: ${diagnosis.diagnosed_on}`
+                      : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-2 font-semibold">Current medications</div>
+
+          {data.current_medications.length === 0 ? (
+            <div className="text-blue-800">No current medications found.</div>
+          ) : (
+            <div className="space-y-2">
+              {data.current_medications.map((medication) => (
+                <div
+                  key={medication.id}
+                  className="rounded-xl border border-blue-100 bg-white p-3"
+                >
+                  <div className="font-medium">
+                    {medication.medication_name}
+                  </div>
+
+                  <div className="text-xs text-blue-700">
+                    {[medication.dosage, medication.frequency, medication.route]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-2 font-semibold">Clinical notes</div>
+
+          {data.clinical_notes.length === 0 ? (
+            <div className="text-blue-800">No clinical notes found.</div>
+          ) : (
+            <div className="space-y-2">
+              {data.clinical_notes.map((note) => (
+                <div
+                  key={note.id}
+                  className="rounded-xl border border-blue-100 bg-white p-3"
+                >
+                  <div className="text-xs font-medium uppercase text-blue-700">
+                    {note.note_type}
+                    {note.doctor_name ? ` · ${note.doctor_name}` : ""}
+                  </div>
+
+                  <div className="mt-1 text-blue-900">
+                    {note.note_preview}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function HistoryPatientMatchesCard({ data }: { data: any }) {
+  const matches = data?.matches ?? [];
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <div className="mb-3 font-semibold">
+        Multiple patients matched. Select the correct patient before viewing history.
+      </div>
+
+      <div className="space-y-2">
+        {matches.map((patient: any) => (
+          <div
+            key={patient.patient_id}
+            className="rounded-xl border border-amber-100 bg-white p-3"
+          >
+            <div className="font-medium">{patient.full_name}</div>
+
+            <div className="text-xs text-amber-800">
+              {patient.patient_number}
+              {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+              {patient.phone_ending
+                ? ` · Phone ending ${patient.phone_ending}`
+                : ""}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -184,6 +367,9 @@ export function DynamicAgentCard({ ui }: Props) {
     case "patient_matches":
     case "booking_patient_matches":
       return <PatientMatchesCard data={ui.data} />;
+
+    case "history_patient_matches":
+      return <HistoryPatientMatchesCard data={ui.data} />;
 
     case "patient_single_match":
       return <PatientSingleMatchCard data={ui.data} />;
@@ -194,9 +380,20 @@ export function DynamicAgentCard({ ui }: Props) {
     case "booking_confirmed":
       return <BookingConfirmedCard data={ui.data} />;
 
+    case "patient_history":
+      return <PatientHistoryCard data={ui.data as PatientHistoryUIData} />;
+
     case "patient_no_match":
     case "booking_patient_no_match":
       return <SimpleStatusCard title="No patient found" data={ui.data} />;
+
+    case "history_patient_no_match":
+      return (
+        <SimpleStatusCard
+          title="No patient history found"
+          data={ui.data}
+        />
+      );
 
     case "booking_slot_unavailable":
       return <SimpleStatusCard title="Slot unavailable" data={ui.data} />;
