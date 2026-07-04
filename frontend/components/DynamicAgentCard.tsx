@@ -376,6 +376,145 @@ function HistoryPatientMatchesCard({
   );
 }
 
+function PatientMedicationsCard({ data }: { data: any }) {
+  const patient = data.patient;
+  const medications = data.current_medications ?? [];
+
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+          Current medications
+        </div>
+        <div className="mt-1 text-lg font-semibold">{patient.full_name}</div>
+        <div className="text-xs text-emerald-800">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+        </div>
+      </div>
+
+      {medications.length === 0 ? (
+        <div className="text-emerald-800">No current medications found.</div>
+      ) : (
+        <div className="space-y-2">
+          {medications.map((medication: any) => (
+            <div
+              key={medication.id}
+              className="rounded-xl border border-emerald-100 bg-white p-3"
+            >
+              <div className="font-medium">{medication.medication_name}</div>
+              <div className="text-xs text-emerald-700">
+                {[medication.dosage, medication.frequency, medication.route]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </div>
+              {medication.start_date && (
+                <div className="mt-1 text-xs text-emerald-700">
+                  Started: {medication.start_date}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatientVisitsCard({ data }: { data: any }) {
+  const patient = data.patient;
+  const visits = data.recent_visits ?? [];
+
+  return (
+    <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700">
+          Recent visits
+        </div>
+        <div className="mt-1 text-lg font-semibold">{patient.full_name}</div>
+        <div className="text-xs text-indigo-800">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+        </div>
+      </div>
+
+      {visits.length === 0 ? (
+        <div className="text-indigo-800">No recent visits found.</div>
+      ) : (
+        <div className="space-y-2">
+          {visits.map((visit: any) => (
+            <div
+              key={visit.id}
+              className="rounded-xl border border-indigo-100 bg-white p-3"
+            >
+              <div className="font-medium">
+                {visit.visit_date} · {visit.visit_type}
+              </div>
+              {visit.doctor_name && (
+                <div className="text-xs text-indigo-700">
+                  Doctor: {visit.doctor_name}
+                </div>
+              )}
+              {visit.reason_for_visit && (
+                <div className="mt-1 text-indigo-900">
+                  Reason: {visit.reason_for_visit}
+                </div>
+              )}
+              {visit.summary && (
+                <div className="mt-1 text-indigo-800">{visit.summary}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatientDiagnosesCard({ data }: { data: any }) {
+  const patient = data.patient;
+  const diagnoses = data.active_diagnoses ?? [];
+
+  return (
+    <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-purple-700">
+          Active diagnoses
+        </div>
+        <div className="mt-1 text-lg font-semibold">{patient.full_name}</div>
+        <div className="text-xs text-purple-800">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+        </div>
+      </div>
+
+      {diagnoses.length === 0 ? (
+        <div className="text-purple-800">No active diagnoses found.</div>
+      ) : (
+        <div className="space-y-2">
+          {diagnoses.map((diagnosis: any) => (
+            <div
+              key={diagnosis.id}
+              className="rounded-xl border border-purple-100 bg-white p-3"
+            >
+              <div className="font-medium">{diagnosis.diagnosis_name}</div>
+              <div className="text-xs text-purple-700">
+                Status: {diagnosis.status}
+                {diagnosis.diagnosis_code
+                  ? ` · Code: ${diagnosis.diagnosis_code}`
+                  : ""}
+                {diagnosis.diagnosed_on
+                  ? ` · Since: ${diagnosis.diagnosed_on}`
+                  : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -422,6 +561,15 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
 
     case "access_denied":
       return <SimpleStatusCard title="Access denied" data={ui.data} />;
+
+        case "patient_medications":
+      return <PatientMedicationsCard data={ui.data} />;
+
+    case "patient_visits":
+      return <PatientVisitsCard data={ui.data} />;
+
+    case "patient_diagnoses":
+      return <PatientDiagnosesCard data={ui.data} />;  
 
     default:
       return null;

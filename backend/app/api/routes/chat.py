@@ -117,6 +117,25 @@ def build_context_followup_response(raw_history, followup_text: str) -> dict:
         },
     }
 
+def build_agent_trace(
+    intent: str,
+    access_status: str,
+    required_permission: str | None = None,
+    tool_used: str | None = None,
+    selected_patient_id: int | None = None,
+    audit_event: str | None = None,
+    workflow_result: str | None = None,
+) -> dict:
+    return {
+        "intent": intent,
+        "access_status": access_status,
+        "required_permission": required_permission,
+        "tool_used": tool_used,
+        "selected_patient_id": selected_patient_id,
+        "audit_event": audit_event,
+        "workflow_result": workflow_result,
+    }
+
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
     payload: ChatMessageRequest,
@@ -344,10 +363,22 @@ def chat_message(
                 message=history_result["message"],
                 intent=intent,
                 intent_entities=intent_result.entities,
-                ui={
-                    "type": history_result["ui_type"],
-                    "data": history_result["ui_data"],
-                },
+
+                ui=ChatUIResponse(
+                    type=history_result["ui_type"],
+                    data={
+                        **history_result["ui_data"],
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="PatientHistoryAgent.get_history_for_query",
+                            selected_patient_id=patient_entity_id,
+                            audit_event="PATIENT_HISTORY_VIEW",
+                            workflow_result=history_result["ui_type"],
+                        ),
+                    },
+                ),
             )
 
         if intent == "patient_context_followup":
@@ -376,6 +407,15 @@ def chat_message(
                         data={
                             "required_permission": access_decision.required_permission,
                             "followup_text": intent_result.entities.get("followup_text"),
+                            "agent_trace": build_agent_trace(
+                                intent=intent,
+                                access_status=access_decision.status,
+                                required_permission=access_decision.required_permission,
+                                tool_used=None,
+                                selected_patient_id=None,
+                                audit_event=None,
+                                workflow_result="patient_context_missing",
+                            ),
                         },
                     ),
                 )
@@ -443,6 +483,15 @@ def chat_message(
                         "context_followup": True,
                         "followup_text": intent_result.entities.get("followup_text"),
                         "required_permission": access_decision.required_permission,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="get_patient_history_tool",
+                            selected_patient_id=chat_session.selected_patient_id,
+                            audit_event="PATIENT_CONTEXT_FOLLOWUP",
+                            workflow_result=history_result["ui_type"],
+                        ),
                     },
                 ),
             )
