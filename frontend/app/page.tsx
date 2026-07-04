@@ -23,6 +23,11 @@ export default function Home() {
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [selectedPatient, setSelectedPatient] = useState<{
+  patientId: number;
+  patientNumber: string;
+  fullName: string;
+} | null>(null);
 
   async function sendMessage(messageText?: string) {
     const text = (messageText ?? input).trim();
@@ -50,6 +55,20 @@ export default function Home() {
       });
 
       setSessionId(response.session_id);
+
+      const responsePatient = response.ui?.data?.patient;
+
+      if (
+        responsePatient?.patient_id &&
+        responsePatient?.patient_number &&
+        responsePatient?.full_name
+      ) {
+        setSelectedPatient({
+          patientId: responsePatient.patient_id,
+          patientNumber: responsePatient.patient_number,
+          fullName: responsePatient.full_name,
+        });
+      }
 
       const assistantMessage: ChatMessage = {
         id: createId(),
@@ -89,7 +108,11 @@ export default function Home() {
           <StaffLoginPanel
             user={user}
             onLogin={setUser}
-            onLogout={() => setUser(null)}
+            onLogout={() => {
+              setUser(null);
+              setSelectedPatient(null);
+              setSessionId(null);
+            }}
           />
 
           <div className="rounded-xl border bg-white p-4 shadow-sm">
@@ -124,12 +147,25 @@ export default function Home() {
 
         <section className="flex h-[calc(100vh-3rem)] flex-col rounded-xl border bg-white shadow-sm">
           <div className="border-b p-4">
-            <div className="font-semibold text-slate-900">Chat Workspace</div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="font-semibold text-slate-900">Chat Workspace</div>
 
-            <div className="text-sm text-slate-500">
-              {user
-                ? `Verified as ${user.fullName} (${user.role})`
-                : "Public mode"}
+                <div className="text-sm text-slate-500">
+                  {user
+                    ? `Verified as ${user.fullName} (${user.role})`
+                    : "Public mode"}
+                </div>
+              </div>
+
+              {selectedPatient && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-right text-xs text-blue-900">
+                  <div className="font-semibold">Current patient</div>
+                  <div>
+                    {selectedPatient.fullName} · {selectedPatient.patientNumber}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
