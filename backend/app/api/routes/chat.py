@@ -17,8 +17,10 @@ from app.services.chat_service import get_or_create_chat_session, save_chat_mess
 from app.services.intent_service import detect_intent
 from app.services.audit_service import log_audit_event
 from app.models.chat import ChatSession
+from app.tools.patient_history_tools import get_patient_history_tool
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -43,6 +45,77 @@ def get_optional_user_context(
 
     return user, permissions
 
+def build_context_followup_response(raw_history, followup_text: str) -> dict:
+    """
+    Builds a section-specific UI response from selected patient history.
+    """
+
+    normalized = (followup_text or "").lower().strip()
+
+    patient_data = raw_history.patient.model_dump()
+
+    if any(word in normalized for word in ["medication", "medications", "meds"]):
+        return {
+            "ui_type": "patient_medications",
+            "message": f"Retrieved current medications for {raw_history.patient.full_name}.",
+            "ui_data": {
+                "patient": patient_data,
+                "current_medications": [
+                    medication.model_dump()
+                    for medication in raw_history.current_medications
+                ],
+            },
+        }
+
+    if any(word in normalized for word in ["visit", "visits"]):
+        return {
+            "ui_type": "patient_visits",
+            "message": f"Retrieved recent visits for {raw_history.patient.full_name}.",
+            "ui_data": {
+                "patient": patient_data,
+                "recent_visits": [
+                    visit.model_dump()
+                    for visit in raw_history.recent_visits
+                ],
+            },
+        }
+
+    if any(word in normalized for word in ["diagnosis", "diagnoses"]):
+        return {
+            "ui_type": "patient_diagnoses",
+            "message": f"Retrieved active diagnoses for {raw_history.patient.full_name}.",
+            "ui_data": {
+                "patient": patient_data,
+                "active_diagnoses": [
+                    diagnosis.model_dump()
+                    for diagnosis in raw_history.active_diagnoses
+                ],
+            },
+        }
+
+    return {
+        "ui_type": "patient_history",
+        "message": f"Retrieved history for {raw_history.patient.full_name}.",
+        "ui_data": {
+            "patient": patient_data,
+            "recent_visits": [
+                visit.model_dump()
+                for visit in raw_history.recent_visits
+            ],
+            "active_diagnoses": [
+                diagnosis.model_dump()
+                for diagnosis in raw_history.active_diagnoses
+            ],
+            "current_medications": [
+                medication.model_dump()
+                for medication in raw_history.current_medications
+            ],
+            "clinical_notes": [
+                note.model_dump()
+                for note in raw_history.clinical_notes
+            ],
+        },
+    }
 
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
@@ -275,6 +348,103 @@ def chat_message(
                     "type": history_result["ui_type"],
                     "data": history_result["ui_data"],
                 },
+            )
+
+        if intent == "patient_context_followup":
+            if not chat_session.selected_patient_id:
+                assistant_message = (
+                    "Please select a patient first. For example, search a patient "
+                    "or open a patient history before asking follow-up questions."
+                )
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    intent_entities=intent_result.entities,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="patient_context_missing",
+                        data={
+                            "required_permission": access_decision.required_permission,
+                            "followup_text": intent_result.entities.get("followup_text"),
+                        },
+                    ),
+                )
+
+            raw_history = get_patient_history_tool(
+                db=db,
+                patient_id=chat_session.selected_patient_id,
+            )
+
+            if raw_history.status == "not_found":
+                history_result = {
+                    "ui_type": "history_patient_no_match",
+                    "message": "The selected patient could not be found.",
+                    "ui_data": {
+                        "query": str(chat_session.selected_patient_id),
+                        "matches": [],
+                    },
+                }
+            else:
+                history_result = build_context_followup_response(
+                    raw_history=raw_history,
+                    followup_text=intent_result.entities.get("followup_text", ""),
+                )
+
+            successful_followup_types = {
+                "patient_history",
+                "patient_medications",
+                "patient_visits",
+                "patient_diagnoses",
+            }
+
+            log_audit_event(
+                db=db,
+                action_type="PATIENT_CONTEXT_FOLLOWUP",
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=chat_session.selected_patient_id,
+                permission_checked=access_decision.required_permission,
+                access_granted=history_result["ui_type"] in successful_followup_types,
+                details=(
+                    f"Patient context follow-up result={history_result['ui_type']}, "
+                    f"selected_patient_id={chat_session.selected_patient_id}, "
+                    f"followup_text='{intent_result.entities.get('followup_text')}'"
+                ),
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=history_result["message"],
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=history_result["message"],
+                intent=intent,
+                intent_entities=intent_result.entities,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=history_result["ui_type"],
+                    data={
+                        **history_result["ui_data"],
+                        "context_followup": True,
+                        "followup_text": intent_result.entities.get("followup_text"),
+                        "required_permission": access_decision.required_permission,
+                    },
+                ),
             )
 
         if intent == "book_appointment":

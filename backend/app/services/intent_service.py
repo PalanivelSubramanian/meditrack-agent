@@ -48,6 +48,29 @@ PATIENT_HISTORY_PATTERNS = [
     r"^show meds for (?P<patient_query>.+)$",
 ]
 
+PATIENT_CONTEXT_FOLLOWUP_PATTERNS = [
+    r"^what medications is he taking\??$",
+    r"^what medications is she taking\??$",
+    r"^what medication is he taking\??$",
+    r"^what medication is she taking\??$",
+    r"^what meds is he taking\??$",
+    r"^what meds is she taking\??$",
+    r"^show medications$",
+    r"^show medication$",
+    r"^show meds$",
+    r"^current medications$",
+    r"^current meds$",
+    r"^show recent visits$",
+    r"^recent visits$",
+    r"^visit history$",
+    r"^show visits$",
+    r"^any active diagnoses\??$",
+    r"^active diagnoses$",
+    r"^show diagnoses$",
+    r"^show diagnosis$",
+    r"^diagnoses$",
+]
+
 PUBLIC_HEALTH_KEYWORDS = [
     "headache",
     "fever",
@@ -120,7 +143,19 @@ def detect_intent(message: str) -> IntentResult:
                 },
             )
 
-    # 3. Patient history
+    # 3. Patient context follow-up
+    for pattern in PATIENT_CONTEXT_FOLLOWUP_PATTERNS:
+        match = re.match(pattern, normalized, flags=re.IGNORECASE)
+        if match:
+            return IntentResult(
+                intent="patient_context_followup",
+                confidence=0.85,
+                entities={
+                    "followup_text": normalized,
+                },
+            )
+
+    # 4. Patient history
     for pattern in PATIENT_HISTORY_PATTERNS:
         match = re.match(pattern, normalized, flags=re.IGNORECASE)
         if match:
@@ -132,7 +167,7 @@ def detect_intent(message: str) -> IntentResult:
                 },
             )
 
-    # 4. Explicit patient search
+    # 5. Explicit patient search
     for pattern in PATIENT_SEARCH_PATTERNS:
         match = re.match(pattern, normalized, flags=re.IGNORECASE)
         if match:
@@ -153,7 +188,7 @@ def detect_intent(message: str) -> IntentResult:
                 },
             )
 
-    # 5. Public health
+    # 6. Public health
     if any(keyword in normalized for keyword in PUBLIC_HEALTH_KEYWORDS):
         return IntentResult(
             intent="public_health_question",
@@ -161,7 +196,7 @@ def detect_intent(message: str) -> IntentResult:
             entities={},
         )
 
-    # 6. Unknown
+    # 7. Unknown
     return IntentResult(
         intent="unknown",
         confidence=0.20,
