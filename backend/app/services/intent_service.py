@@ -27,6 +27,13 @@ AVAILABILITY_PATTERNS = [
 ]
 
 PATIENT_HISTORY_PATTERNS = [
+    r"^show history for (?P<patient_query>.+)$",
+    r"^show patient history for (?P<patient_query>.+)$",
+    r"^view history for (?P<patient_query>.+)$",
+    r"^view patient history for (?P<patient_query>.+)$",
+    r"^open (?P<patient_query>p\d+)$",
+    r"^select (?P<patient_query>p\d+)$",
+    r"^choose (?P<patient_query>p\d+)$",
     r"^show (?P<patient_query>.+?) history$",
     r"^show (?P<patient_query>.+?) patient history$",
     r"^view (?P<patient_query>.+?) history$",
