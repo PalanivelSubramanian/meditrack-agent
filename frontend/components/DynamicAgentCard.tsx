@@ -2,6 +2,7 @@ import type { ChatUI, PatientHistoryUIData } from "@/types/chat";
 
 type Props = {
   ui: ChatUI;
+  onSendMessage?: (message: string) => void;
 };
 
 function CardShell({
@@ -328,7 +329,13 @@ function PatientHistoryCard({ data }: { data: PatientHistoryUIData }) {
   );
 }
 
-function HistoryPatientMatchesCard({ data }: { data: any }) {
+function HistoryPatientMatchesCard({
+  data,
+  onSendMessage,
+}: {
+  data: any;
+  onSendMessage?: (message: string) => void;
+}) {
   const matches = data?.matches ?? [];
 
   return (
@@ -352,6 +359,16 @@ function HistoryPatientMatchesCard({ data }: { data: any }) {
                 ? ` · Phone ending ${patient.phone_ending}`
                 : ""}
             </div>
+
+            {onSendMessage && (
+              <button
+                type="button"
+                onClick={() => onSendMessage(`Select ${patient.patient_number}`)}
+                className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+              >
+                View history
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -359,7 +376,7 @@ function HistoryPatientMatchesCard({ data }: { data: any }) {
   );
 }
 
-export function DynamicAgentCard({ ui }: Props) {
+export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
       return <AuthRequiredCard data={ui.data} />;
@@ -369,7 +386,12 @@ export function DynamicAgentCard({ ui }: Props) {
       return <PatientMatchesCard data={ui.data} />;
 
     case "history_patient_matches":
-      return <HistoryPatientMatchesCard data={ui.data} />;
+      return (
+        <HistoryPatientMatchesCard
+          data={ui.data}
+          onSendMessage={onSendMessage}
+        />
+      );
 
     case "patient_single_match":
       return <PatientSingleMatchCard data={ui.data} />;

@@ -15,7 +15,7 @@ export default function Home() {
     {
       id: createId(),
       sender: "assistant",
-      text: "Hello, I am MediTrack Agent. I can help with public health questions or verified clinic workflows like patient search, appointment booking, and doctor availability.",
+      text: "Hello, I am MediTrack Agent. I can help with public health questions or verified clinic workflows like patient search, appointment booking, doctor availability, and patient history.",
     },
   ]);
 
@@ -27,7 +27,9 @@ export default function Home() {
   async function sendMessage(messageText?: string) {
     const text = (messageText ?? input).trim();
 
-    if (!text || isSending) return;
+    if (!text || isSending) {
+      return;
+    }
 
     setInput("");
     setIsSending(true);
@@ -78,6 +80,7 @@ export default function Home() {
             <h1 className="text-lg font-bold text-slate-900">
               MediTrack Agent
             </h1>
+
             <p className="mt-1 text-sm text-slate-500">
               Agentic healthcare coordination assistant.
             </p>
@@ -102,11 +105,15 @@ export default function Home() {
                 "Which cardiologists are available tomorrow?",
                 "Show dermatology slots tomorrow",
                 "Book appointment for Aisha Rahman with cardiology tomorrow at 09:30",
+                "Show Aisha Rahman history",
+                "Show John Smith history",
               ].map((example) => (
                 <button
                   key={example}
+                  type="button"
                   onClick={() => sendMessage(example)}
-                  className="w-full rounded-lg border px-3 py-2 text-left text-xs hover:bg-slate-50"
+                  disabled={isSending}
+                  className="w-full rounded-lg border px-3 py-2 text-left text-xs hover:bg-slate-50 disabled:opacity-50"
                 >
                   {example}
                 </button>
@@ -118,6 +125,7 @@ export default function Home() {
         <section className="flex h-[calc(100vh-3rem)] flex-col rounded-xl border bg-white shadow-sm">
           <div className="border-b p-4">
             <div className="font-semibold text-slate-900">Chat Workspace</div>
+
             <div className="text-sm text-slate-500">
               {user
                 ? `Verified as ${user.fullName} (${user.role})`
@@ -146,7 +154,12 @@ export default function Home() {
                 </div>
 
                 {message.sender === "assistant" && message.response?.ui && (
-                  <DynamicAgentCard ui={message.response.ui} />
+                  <div className="mt-2">
+                    <DynamicAgentCard
+                      ui={message.response.ui}
+                      onSendMessage={sendMessage}
+                    />
+                  </div>
                 )}
               </div>
             ))}
