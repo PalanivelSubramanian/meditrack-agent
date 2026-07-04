@@ -515,6 +515,69 @@ function PatientDiagnosesCard({ data }: { data: any }) {
   );
 }
 
+function AgentTracePanel({ trace }: { trace: any }) {
+  if (!trace) {
+    return null;
+  }
+
+  return (
+    <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">
+      <summary className="cursor-pointer font-semibold text-slate-800">
+        Agent trace
+      </summary>
+
+      <div className="mt-3 grid gap-2">
+        {trace.intent && (
+          <div>
+            <span className="font-semibold">Intent:</span> {trace.intent}
+          </div>
+        )}
+
+        {trace.access_status && (
+          <div>
+            <span className="font-semibold">Access:</span>{" "}
+            {trace.access_status}
+          </div>
+        )}
+
+        {trace.required_permission && (
+          <div>
+            <span className="font-semibold">Permission:</span>{" "}
+            {trace.required_permission}
+          </div>
+        )}
+
+        {trace.tool_used && (
+          <div>
+            <span className="font-semibold">Tool:</span> {trace.tool_used}
+          </div>
+        )}
+
+        {trace.selected_patient_id && (
+          <div>
+            <span className="font-semibold">Selected patient ID:</span>{" "}
+            {trace.selected_patient_id}
+          </div>
+        )}
+
+        {trace.audit_event && (
+          <div>
+            <span className="font-semibold">Audit event:</span>{" "}
+            {trace.audit_event}
+          </div>
+        )}
+
+        {trace.workflow_result && (
+          <div>
+            <span className="font-semibold">Workflow result:</span>{" "}
+            {trace.workflow_result}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -542,7 +605,12 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
       return <BookingConfirmedCard data={ui.data} />;
 
     case "patient_history":
-      return <PatientHistoryCard data={ui.data as PatientHistoryUIData} />;
+      return (
+        <>
+          <PatientHistoryCard data={ui.data as PatientHistoryUIData} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
 
     case "patient_no_match":
     case "booking_patient_no_match":
@@ -562,14 +630,29 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
     case "access_denied":
       return <SimpleStatusCard title="Access denied" data={ui.data} />;
 
-        case "patient_medications":
-      return <PatientMedicationsCard data={ui.data} />;
+    case "patient_medications":
+      return (
+        <>
+          <PatientMedicationsCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
 
     case "patient_visits":
-      return <PatientVisitsCard data={ui.data} />;
+      return (
+        <>
+          <PatientVisitsCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
 
     case "patient_diagnoses":
-      return <PatientDiagnosesCard data={ui.data} />;  
+      return (
+        <>
+          <PatientDiagnosesCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      ); 
 
     default:
       return null;
