@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON, func
 from sqlalchemy.sql import func
 
 from app.db.database import Base
@@ -9,11 +9,13 @@ class ChatSession(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-
+    selected_patient_id = Column(Integer, ForeignKey("patients.id"), nullable=True)
+    
     session_type = Column(String(50), nullable=False, default="public_health_chat")
 
     started_at = Column(DateTime(timezone=True), server_default=func.now())
     ended_at = Column(DateTime(timezone=True), nullable=True)
+    
 
 
 class ChatMessage(Base):
