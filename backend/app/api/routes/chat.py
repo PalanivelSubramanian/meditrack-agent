@@ -239,6 +239,11 @@ def chat_message(
             if history_result["ui_type"] == "patient_history":
                 patient_entity_id = history_result["ui_data"]["patient"]["patient_id"]
 
+                chat_session.selected_patient_id = patient_entity_id
+                db.add(chat_session)
+                db.commit()
+                db.refresh(chat_session)
+
             log_audit_event(
                 db=db,
                 action_type="PATIENT_HISTORY_VIEW",
