@@ -1,3 +1,12 @@
+export type AuthUser = {
+  id: number;
+  employeeId: string;
+  fullName: string;
+  role: string;
+  permissions: string[];
+  accessToken: string;
+};
+
 export type PatientHistoryPatient = {
   patient_id: number;
   patient_number: string;
@@ -49,4 +58,25 @@ export type PatientHistoryUIData = {
   active_diagnoses: PatientHistoryDiagnosis[];
   current_medications: PatientHistoryMedication[];
   clinical_notes: PatientHistoryNote[];
+};
+
+export type ChatUI = {
+  type: string;
+  data: any;
+};
+
+export type ChatResponse = {
+  session_id: number;
+  message: string;
+  intent: string;
+  requires_auth?: boolean;
+  intent_entities?: Record<string, any>;
+  ui?: ChatUI;
+};
+
+export type ChatMessage = {
+  id: string;
+  sender: "user" | "assistant";
+  text: string;
+  response?: ChatResponse;
 };

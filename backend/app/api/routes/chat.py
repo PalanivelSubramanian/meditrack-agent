@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 from datetime import date, timedelta
 
 from app.agents.patient_agent import PatientAgent
@@ -19,11 +20,14 @@ from app.services.audit_service import log_audit_event
 from app.models.chat import ChatSession
 from app.tools.patient_history_tools import get_patient_history_tool
 
+
 router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
 
+class ClearPatientContextRequest(BaseModel):
+    session_id: int
 
 def get_optional_user_context(
     credentials: HTTPAuthorizationCredentials | None,
@@ -134,6 +138,55 @@ def build_agent_trace(
         "selected_patient_id": selected_patient_id,
         "audit_event": audit_event,
         "workflow_result": workflow_result,
+    }
+
+@router.post("/clear-patient-context")
+def clear_patient_context(
+    payload: ClearPatientContextRequest,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    user, permissions = get_optional_user_context(credentials, db)
+
+    if user is None:
+        return {
+            "status": "auth_required",
+            "message": "Authentication is required to clear patient context.",
+        }
+
+    chat_session = (
+        db.query(ChatSession)
+        .filter(ChatSession.id == payload.session_id)
+        .first()
+    )
+
+    if chat_session is None:
+        return {
+            "status": "not_found",
+            "message": "Chat session not found.",
+        }
+
+    previous_patient_id = chat_session.selected_patient_id
+
+    chat_session.selected_patient_id = None
+    db.add(chat_session)
+    db.commit()
+
+    log_audit_event(
+        db=db,
+        action_type="CLEAR_PATIENT_CONTEXT",
+        user_id=user.id,
+        entity_type="chat_session",
+        entity_id=chat_session.id,
+        permission_checked="view_patient_history",
+        access_granted=True,
+        details=f"Cleared selected_patient_id={previous_patient_id}",
+    )
+
+    return {
+        "status": "cleared",
+        "session_id": chat_session.id,
+        "previous_patient_id": previous_patient_id,
     }
 
 @router.post("/message", response_model=ChatMessageResponse)

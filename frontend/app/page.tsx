@@ -10,6 +10,9 @@ function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -91,6 +94,43 @@ export default function Home() {
     }
   }
 
+  async function clearPatientContext() {
+  console.log("Clear patient clicked");
+
+  setSelectedPatient(null);
+
+  if (!sessionId) {
+    console.warn("No sessionId available to clear patient context");
+    return;
+  }
+
+  if (!user?.accessToken) {
+    console.warn("No access token available to clear patient context");
+    return;
+  }
+
+  const clearUrl = `${API_BASE_URL}/chat/clear-patient-context`;
+  console.log("Calling clear patient endpoint:", clearUrl, "sessionId:", sessionId);
+
+  try {
+    const response = await fetch(clearUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${user.accessToken}`,
+      },
+      body: JSON.stringify({
+        session_id: sessionId,
+      }),
+    });
+
+    const result = await response.json();
+    console.log("Clear patient context result:", result);
+  } catch (error) {
+    console.error("Failed to clear patient context", error);
+  }
+}
+
   return (
     <main className="min-h-screen bg-slate-100 p-6">
       <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[280px_1fr]">
@@ -161,9 +201,17 @@ export default function Home() {
               {selectedPatient && (
                 <div className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-right text-xs text-blue-900">
                   <div className="font-semibold">Current patient</div>
+
                   <div>
                     {selectedPatient.fullName} · {selectedPatient.patientNumber}
                   </div>
+
+                  <button
+                      type="button"
+                      onClick={clearPatientContext}
+                      className="mt-2 rounded-lg border border-blue-300 bg-white px-2 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-100">
+                      Clear patient
+                    </button>
                 </div>
               )}
             </div>
