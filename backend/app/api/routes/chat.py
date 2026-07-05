@@ -19,6 +19,7 @@ from app.services.intent_service import detect_intent
 from app.services.audit_service import log_audit_event
 from app.models.chat import ChatSession
 from app.tools.patient_history_tools import get_patient_history_tool
+from app.tools.appointment_tools import find_upcoming_patient_appointments_tool
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -187,6 +188,36 @@ def clear_patient_context(
         "status": "cleared",
         "session_id": chat_session.id,
         "previous_patient_id": previous_patient_id,
+    }
+
+def build_appointment_lookup_response(appointment_result: dict) -> dict:
+    if appointment_result["status"] == "not_found":
+        return {
+            "ui_type": "appointment_patient_not_found",
+            "message": appointment_result["message"],
+            "ui_data": {
+                "patient": None,
+                "appointments": [],
+            },
+        }
+
+    if len(appointment_result["appointments"]) == 0:
+        return {
+            "ui_type": "no_upcoming_appointments",
+            "message": appointment_result["message"],
+            "ui_data": {
+                "patient": appointment_result["patient"],
+                "appointments": [],
+            },
+        }
+
+    return {
+        "ui_type": "upcoming_appointments",
+        "message": appointment_result["message"],
+        "ui_data": {
+            "patient": appointment_result["patient"],
+            "appointments": appointment_result["appointments"],
+        },
     }
 
 @router.post("/message", response_model=ChatMessageResponse)
@@ -544,6 +575,81 @@ def chat_message(
                             selected_patient_id=chat_session.selected_patient_id,
                             audit_event="PATIENT_CONTEXT_FOLLOWUP",
                             workflow_result=history_result["ui_type"],
+                        ),
+                    },
+                ),
+            )
+
+        if intent == "manage_appointment":
+            patient_query = intent_result.entities.get("patient_query", "")
+
+            patient_history_agent = PatientHistoryAgent()
+            patient_result = patient_history_agent.get_history_for_query(
+                db=db,
+                patient_query=patient_query,
+            )
+
+            patient_entity_id = None
+
+            if patient_result["ui_type"] == "patient_history":
+                patient_entity_id = patient_result["ui_data"]["patient"]["patient_id"]
+
+                appointment_result = find_upcoming_patient_appointments_tool(
+                    db=db,
+                    patient_id=patient_entity_id,
+                )
+
+                workflow_result = build_appointment_lookup_response(
+                    appointment_result=appointment_result,
+                )
+            else:
+                workflow_result = {
+                    "ui_type": patient_result["ui_type"],
+                    "message": patient_result["message"],
+                    "ui_data": patient_result["ui_data"],
+                }
+
+            log_audit_event(
+                db=db,
+                action_type="APPOINTMENT_LOOKUP",
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=patient_entity_id,
+                permission_checked=access_decision.required_permission,
+                access_granted=workflow_result["ui_type"] == "upcoming_appointments",
+                details=(
+                    f"Appointment lookup result={workflow_result['ui_type']}, "
+                    f"patient_query='{patient_query}'"
+                ),
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=workflow_result["message"],
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=workflow_result["message"],
+                intent=intent,
+                intent_entities=intent_result.entities,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=workflow_result["ui_type"],
+                    data={
+                        **workflow_result["ui_data"],
+                        "required_permission": access_decision.required_permission,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="find_upcoming_patient_appointments_tool",
+                            selected_patient_id=patient_entity_id,
+                            audit_event="APPOINTMENT_LOOKUP",
+                            workflow_result=workflow_result["ui_type"],
                         ),
                     },
                 ),
