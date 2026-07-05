@@ -15,7 +15,16 @@ def _appointment_doctor_name(doctor: Doctor | None) -> str | None:
     if doctor is None:
         return None
 
-    return f"Dr. {doctor.first_name} {doctor.last_name}".strip()
+    if hasattr(doctor, "full_name") and doctor.full_name:
+        return doctor.full_name
+
+    if hasattr(doctor, "name") and doctor.name:
+        return doctor.name
+
+    if hasattr(doctor, "doctor_name") and doctor.doctor_name:
+        return doctor.doctor_name
+
+    return f"Doctor #{doctor.id}"
 
 
 def find_upcoming_patient_appointments_tool(
