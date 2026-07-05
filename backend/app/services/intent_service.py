@@ -101,13 +101,17 @@ CANCEL_APPOINTMENT_ID_PATTERNS = [
     r"^cancel booking (?P<appointment_id>\d+)$",
 ]
 
+PATIENT_HISTORY_SUMMARY_CURRENT_PATIENT_PATTERNS = [
+    r"^summarize current patient history$",
+    r"^summarize selected patient history$",
+    r"^summarize this patient history$",
+]
+
 PATIENT_HISTORY_SUMMARY_PATTERNS = [
     r"^summarize (?P<patient_query>.+?) history$",
     r"^summarize (?P<patient_query>.+?)'s history$",
     r"^summarize history for (?P<patient_query>.+)$",
     r"^summary for (?P<patient_query>.+?) history$",
-    r"^summarize current patient history$",
-    r"^summarize selected patient history$",
 ]
 
 def clean_patient_query(query: str) -> str:
@@ -164,6 +168,15 @@ def detect_intent(message: str) -> IntentResult:
                     "specialization": normalize_specialization(match.group("specialization")),
                     "date_text": "tomorrow",
                 },
+            )
+
+    for pattern in PATIENT_HISTORY_SUMMARY_CURRENT_PATIENT_PATTERNS:
+        match = re.search(pattern, normalized)
+        if match:
+            return IntentResult(
+                intent="summarize_patient_history",
+                confidence=0.94,
+                entities={},
             )
 
     for pattern in PATIENT_HISTORY_SUMMARY_PATTERNS:
