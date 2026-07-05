@@ -370,6 +370,15 @@ def build_specialization_suggestion_response(
         },
     }
 
+def is_booking_confirm_specialization_state(workflow_state: dict | None) -> bool:
+    if not workflow_state:
+        return False
+
+    return (
+        workflow_state.get("workflow") == "appointment_booking"
+        and workflow_state.get("step") == "confirm_specialization"
+    )
+
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
     payload: ChatMessageRequest,
@@ -1314,12 +1323,24 @@ def chat_message(
                     ),
                 )
 
+            booking_workflow_state_before_clear = chat_session.workflow_state
+
             scheduling_agent = SchedulingAgent()
             scheduling_result = scheduling_agent.book_from_entities(
                 db=db,
                 entities=intent_result.entities,
                 created_by=user.id if user else None,
             )
+
+            booking_workflow_cleared = False
+
+            if scheduling_result.ui_type == "booking_confirmed":
+                save_workflow_state(
+                    db=db,
+                    chat_session=chat_session,
+                    workflow_state=None,
+                )
+                booking_workflow_cleared = True
 
             log_audit_event(
                 db=db,
@@ -1331,7 +1352,9 @@ def chat_message(
                 access_granted=scheduling_result.ui_type == "booking_confirmed",
                 details=(
                     f"Booking workflow result={scheduling_result.ui_type}, "
-                    f"entities={intent_result.entities}"
+                    f"entities={intent_result.entities}, "
+                    f"workflow_state_before_clear={booking_workflow_state_before_clear}, "
+                    f"workflow_cleared={booking_workflow_cleared}"
                 ),
             )
 
@@ -1354,6 +1377,17 @@ def chat_message(
                         **scheduling_result.ui_data,
                         "required_permission": access_decision.required_permission,
                         "user_role": user.role.role_name if user else None,
+                        "booking_workflow_state_before_clear": booking_workflow_state_before_clear,
+                        "booking_workflow_cleared": booking_workflow_cleared,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="SchedulingAgent.book_from_entities",
+                            selected_patient_id=scheduling_result.ui_data.get("patient_id"),
+                            audit_event="BOOK_APPOINTMENT",
+                            workflow_result=scheduling_result.ui_type,
+                        ),
                     },
                 ),
             )
@@ -1426,6 +1460,19 @@ def chat_message(
                 target_date=target_date,
             )
 
+            if is_booking_confirm_specialization_state(chat_session.workflow_state):
+                save_workflow_state(
+                    db=db,
+                    chat_session=chat_session,
+                    workflow_state={
+                        **(chat_session.workflow_state or {}),
+                        "step": "select_slot",
+                        "availability_specialization": specialization,
+                        "availability_date_text": date_text,
+                        "availability_result_type": availability_result.ui_type,
+                    },
+                )
+
             log_audit_event(
                 db=db,
                 action_type="CHECK_DOCTOR_AVAILABILITY",
@@ -1460,6 +1507,7 @@ def chat_message(
                         **availability_result.ui_data,
                         "required_permission": access_decision.required_permission,
                         "user_role": user.role.role_name if user else None,
+                        "booking_workflow_state": chat_session.workflow_state,
                     },
                 ),
             )

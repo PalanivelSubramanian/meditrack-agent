@@ -107,8 +107,44 @@ function PatientSingleMatchCard({ data }: { data: Record<string, any> }) {
   );
 }
 
-function AvailabilitySlotsCard({ data }: { data: Record<string, any> }) {
-  const slots = data.slots || [];
+function buildBookingCommandFromWorkflowState({
+  slot,
+  bookingWorkflowState,
+}: {
+  slot: any;
+  bookingWorkflowState: any;
+}) {
+  const patientQuery = bookingWorkflowState?.patient_query;
+  const specialization =
+    bookingWorkflowState?.availability_specialization ??
+    bookingWorkflowState?.suggested_specialization;
+
+  const dateText = bookingWorkflowState?.availability_date_text ?? "tomorrow";
+
+  const startTime =
+    slot.start_time ??
+    slot.time ??
+    slot.slot_time ??
+    slot.appointment_time;
+
+  if (!patientQuery || !specialization || !startTime) {
+    return null;
+  }
+
+  return `Book appointment for ${patientQuery} with ${specialization} ${dateText} at ${startTime}`;
+}
+
+function AvailabilitySlotsCard({
+  data,
+  onSendMessage,
+}: {
+  data: Record<string, any>;
+  onSendMessage?: (message: string) => void;
+}) {
+  const slots = data.slots || data.available_slots || [];
+  const bookingWorkflowState = data.booking_workflow_state;
+  const isBookingWorkflow =
+    bookingWorkflowState?.workflow === "appointment_booking";
 
   return (
     <CardShell title="Available appointment slots">
@@ -131,6 +167,25 @@ function AvailabilitySlotsCard({ data }: { data: Record<string, any> }) {
             <div className="text-sm text-slate-600">
               {slot.department} / {slot.specialization}
             </div>
+
+            {isBookingWorkflow && onSendMessage && (
+              <button
+                type="button"
+                onClick={() => {
+                  const bookingCommand = buildBookingCommandFromWorkflowState({
+                    slot,
+                    bookingWorkflowState,
+                  });
+
+                  if (bookingCommand) {
+                    onSendMessage(bookingCommand);
+                  }
+                }}
+                className="mt-2 rounded-lg bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700"
+              >
+                Book this slot
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -1391,7 +1446,12 @@ export function DynamicAgentCard({
       return <PatientSingleMatchCard data={ui.data} />;
 
     case "availability_slots":
-      return <AvailabilitySlotsCard data={ui.data} />;
+      return (
+        <AvailabilitySlotsCard
+          data={ui.data}
+          onSendMessage={onSendMessage}
+        />
+      );
 
     case "booking_confirmed":
       return <BookingConfirmedCard data={ui.data} />;
@@ -1434,7 +1494,7 @@ export function DynamicAgentCard({
         </>
       ); 
 
-        case "upcoming_appointments":
+    case "upcoming_appointments":
       return (
         <>
           <UpcomingAppointmentsCard
@@ -1461,7 +1521,7 @@ export function DynamicAgentCard({
         </>
       );  
 
-        case "appointment_cancelled":
+    case "appointment_cancelled":
       return (
         <>
           <AppointmentCancelResultCard data={ui.data} />
@@ -1493,7 +1553,7 @@ export function DynamicAgentCard({
         </>
       );  
 
-        case "patient_history_summary":
+    case "patient_history_summary":
       return (
         <>
           <PatientHistorySummaryCard data={ui.data} />
@@ -1517,7 +1577,7 @@ export function DynamicAgentCard({
         />
       );  
 
-        case "patient_registered":
+    case "patient_registered":
       return (
         <>
           <PatientRegistrationCard data={ui.data} />
