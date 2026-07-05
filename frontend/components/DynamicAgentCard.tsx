@@ -750,6 +750,73 @@ function AppointmentCancelResultCard({ data }: { data: any }) {
   );
 }
 
+function PatientHistorySummaryCard({ data }: { data: any }) {
+  const patient = data.patient;
+  const summary = data.summary ?? "";
+  const graphNodes = data.graph_nodes ?? [];
+
+  if (!patient) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+        <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+          AI history summary
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">Patient history not found</div>
+
+        <div className="mt-2 whitespace-pre-wrap text-red-800">
+          {summary || "No summary available."}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-4 text-sm text-fuchsia-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-fuchsia-700">
+          AI-generated history summary
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">{patient.full_name}</div>
+
+        <div className="text-xs text-fuchsia-800">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-fuchsia-100 bg-white p-3">
+        <div className="whitespace-pre-wrap leading-relaxed text-fuchsia-950">
+          {summary || "No summary available."}
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-fuchsia-100 bg-white p-3 text-xs text-fuchsia-800">
+        <div>
+          <span className="font-semibold">LLM status:</span>{" "}
+          {data.llm_status ?? "unknown"}
+        </div>
+
+        {data.llm_model && (
+          <div>
+            <span className="font-semibold">Model:</span> {data.llm_model}
+          </div>
+        )}
+
+        {graphNodes.length > 0 && (
+          <div className="mt-2">
+            <div className="font-semibold">LangGraph nodes:</div>
+            <div className="mt-1">
+              {graphNodes.join(" → ")}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -881,6 +948,22 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
       return (
         <>
           <AppointmentCancelResultCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );  
+
+        case "patient_history_summary":
+      return (
+        <>
+          <PatientHistorySummaryCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "patient_history_summary_not_found":
+      return (
+        <>
+          <PatientHistorySummaryCard data={ui.data} />
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
       );  
