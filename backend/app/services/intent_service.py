@@ -86,6 +86,15 @@ PUBLIC_HEALTH_KEYWORDS = [
     "pain",
 ]
 
+APPOINTMENT_MANAGEMENT_PATTERNS = [
+    r"^cancel appointment for (?P<patient_query>.+)$",
+    r"^cancel (?P<patient_query>.+?) appointment$",
+    r"^cancel (?P<patient_query>.+?)'s appointment$",
+    r"^show (?P<patient_query>.+?) upcoming appointments$",
+    r"^show appointments for (?P<patient_query>.+)$",
+    r"^list appointments for (?P<patient_query>.+)$",
+]
+
 
 def clean_patient_query(query: str) -> str:
     query = query.strip()
@@ -186,6 +195,21 @@ def detect_intent(message: str) -> IntentResult:
                 entities={
                     "patient_query": patient_query,
                 },
+            )
+
+    for pattern in APPOINTMENT_MANAGEMENT_PATTERNS:
+        match = re.search(pattern, normalized)
+        if match:
+            entities = {
+                key: value.strip()
+                for key, value in match.groupdict().items()
+                if value
+            }
+
+            return IntentResult(
+                intent="manage_appointment",
+                confidence=0.9,
+                entities=entities,
             )
 
     # 6. Public health
