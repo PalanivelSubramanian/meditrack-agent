@@ -2,9 +2,12 @@
 
 import { useState } from "react";
 import { postChatMessage } from "@/lib/api";
+import type { AuthUser, ChatMessage, ChatResponse } from "@/types/chat";
+
 import { DynamicAgentCard } from "@/components/DynamicAgentCard";
 import { StaffLoginPanel } from "@/components/StaffLoginPanel";
-import type { AuthUser, ChatMessage, ChatResponse } from "@/types/chat";
+import { AuditLogPanel } from "@/components/AuditLogPanel";
+
 
 function createId() {
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -154,6 +157,31 @@ export default function Home() {
               setSessionId(null);
             }}
           />
+
+          <AuditLogPanel user={user} />
+
+          <div className="rounded-xl border bg-white p-4 shadow-sm">
+            <div className="text-sm font-semibold text-slate-800">
+              Demo script
+            </div>
+
+            <div className="mt-1 text-xs text-slate-500">
+              Recommended final project walkthrough.
+            </div>
+
+            <ol className="mt-3 list-decimal space-y-2 pl-4 text-xs text-slate-700">
+              <li>Login as receptionist using Employee ID + TOTP.</li>
+              <li>Search ambiguous patient: John Smith.</li>
+              <li>Select P10001 and view patient history.</li>
+              <li>Ask: What medications is he taking?</li>
+              <li>Ask: Summarize current patient history.</li>
+              <li>Click Clear patient, then ask medication follow-up again.</li>
+              <li>Show Aisha Rahman upcoming appointments.</li>
+              <li>Cancel appointment if a demo appointment exists.</li>
+              <li>Login as admin and refresh Audit viewer.</li>
+              <li>Show Agent trace and audit logs together.</li>
+            </ol>
+          </div>
 
           <div className="rounded-xl border bg-white p-4 shadow-sm">
             <div className="text-sm font-semibold text-slate-800">

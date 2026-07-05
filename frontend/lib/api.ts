@@ -69,3 +69,35 @@ export async function verifyTotp(params: {
 
   return response.json();
 }
+
+export type AuditLogItem = {
+  id: number;
+  action_type: string;
+  user_id: number | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  permission_checked: string | null;
+  access_granted: boolean;
+  details: string | null;
+  created_at: string;
+};
+
+export async function fetchAuditLogs(accessToken?: string): Promise<AuditLogItem[]> {
+  if (!accessToken) {
+    throw new Error("Login required to view audit logs.");
+  }
+
+  const response = await fetch(`${API_BASE_URL}/audit/logs`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Failed to fetch audit logs.");
+  }
+
+  return response.json();
+}
