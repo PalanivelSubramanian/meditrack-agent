@@ -123,3 +123,69 @@ def summarize_patient_history_with_llm(history_data: dict[str, Any]) -> dict[str
         "summary": response.output_text,
         "model": LLM_MODEL,
     }
+
+def answer_public_health_question_with_llm(question: str) -> dict[str, Any]:
+    """
+    Answers public/general health questions safely.
+
+    Safety rules:
+    - No diagnosis.
+    - No prescriptions.
+    - No medication dose instructions.
+    - No patient-specific clinical decisions.
+    - Must include urgent red flags when relevant.
+    """
+
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+
+    if not api_key or api_key == "your_api_key_here":
+        return {
+            "status": "disabled",
+            "answer": (
+                "I can share general health information, but LLM public health answers "
+                "are not configured because OPENAI_API_KEY is missing. "
+                "If symptoms are severe, worsening, or urgent, please contact a healthcare professional."
+            ),
+            "model": None,
+        }
+
+    client = OpenAI()
+
+    response = client.responses.create(
+        model=LLM_MODEL,
+        input=[
+            {
+                "role": "system",
+                "content": (
+                    "You are a cautious public health education assistant. "
+                    "Answer general health questions in plain language. "
+                    "Do not diagnose the user. "
+                    "Do not prescribe treatment. "
+                    "Do not give medication dosage instructions. "
+                    "Do not claim certainty. "
+                    "Do not ask for or use private patient records. "
+                    "Include urgent warning signs or red flags when relevant. "
+                    "Recommend contacting a licensed healthcare professional for persistent, severe, worsening, or concerning symptoms."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Give a safe, general educational answer to this health question. "
+                    "Use this structure:\n"
+                    "1. A short direct answer\n"
+                    "2. Common possible causes or explanations\n"
+                    "3. Basic self-care or monitoring ideas, without medication dosing\n"
+                    "4. Red flags / when to seek urgent care\n"
+                    "5. A brief note that this is not a diagnosis\n\n"
+                    f"Question: {question}"
+                ),
+            },
+        ],
+    )
+
+    return {
+        "status": "success",
+        "answer": response.output_text,
+        "model": LLM_MODEL,
+    }

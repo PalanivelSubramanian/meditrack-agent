@@ -24,6 +24,7 @@ from app.tools.appointment_tools import (
     cancel_appointment_tool,
 )
 from app.agents.patient_history_summary_graph import run_patient_history_summary_graph
+from app.services.llm_service import answer_public_health_question_with_llm
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -1111,10 +1112,9 @@ def chat_message(
         )
 
     if intent == "public_health_question":
-        assistant_message = (
-            "I can share general health information, but I cannot diagnose or prescribe treatment. "
-            "If symptoms are severe, worsening, or urgent, please contact a healthcare professional."
-        )
+        public_health_result = answer_public_health_question_with_llm(payload.message)
+
+        assistant_message = public_health_result["answer"]
         ui_type = "public_health_answer"
     else:
         assistant_message = (
@@ -1131,6 +1131,16 @@ def chat_message(
         intent=intent,
     )
 
+    ui_data = {}
+
+    if intent == "public_health_question":
+        ui_data = {
+            "answer": assistant_message,
+            "llm_status": public_health_result["status"],
+            "llm_model": public_health_result["model"],
+            "safety_scope": "general_health_information_only",
+        }
+
     return ChatMessageResponse(
         session_id=chat_session.id,
         message=assistant_message,
@@ -1138,6 +1148,6 @@ def chat_message(
         requires_auth=False,
         ui=ChatUIResponse(
             type=ui_type,
-            data={},
+            data=ui_data,
         ),
     )

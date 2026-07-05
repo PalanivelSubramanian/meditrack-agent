@@ -817,6 +817,79 @@ function PatientHistorySummaryCard({ data }: { data: any }) {
   );
 }
 
+function PublicHealthAnswerCard({ data, message }: { data: any; message?: string }) {
+  const answer = data?.answer ?? message ?? "";
+
+  const sections = answer
+    .split(/(?=\d+\.\s)/g)
+    .map((section: string) => section.trim())
+    .filter(Boolean);
+
+  return (
+    <div className="rounded-2xl border border-teal-200 bg-teal-50 p-4 text-sm text-teal-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-teal-700">
+          General health information
+        </div>
+        <div className="mt-1 text-xs text-teal-800">
+          Educational only — not a diagnosis.
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {sections.length > 0 ? (
+          sections.map((section: string, index: number) => {
+            const cleaned = section.replace(/^\d+\.\s*/, "");
+            const [rawTitle, ...rest] = cleaned.split(":");
+            const body = rest.join(":").trim();
+
+            return (
+              <div
+                key={`${index}-${rawTitle}`}
+                className="rounded-xl border border-teal-100 bg-white p-3"
+              >
+                <div className="font-semibold text-teal-900">
+                  {rawTitle.trim()}
+                </div>
+
+                {body && (
+                  <div className="mt-1 leading-relaxed text-teal-800">
+                    {body}
+                  </div>
+                )}
+              </div>
+            );
+          })
+        ) : (
+          <div className="whitespace-pre-wrap rounded-xl border border-teal-100 bg-white p-3 leading-relaxed text-teal-800">
+            {answer}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-teal-100 bg-white p-3 text-xs text-teal-700">
+        <div>
+          <span className="font-semibold">Safety scope:</span>{" "}
+          {data?.safety_scope ?? "general_health_information_only"}
+        </div>
+
+        {data?.llm_status && (
+          <div>
+            <span className="font-semibold">LLM status:</span>{" "}
+            {data.llm_status}
+          </div>
+        )}
+
+        {data?.llm_model && (
+          <div>
+            <span className="font-semibold">Model:</span> {data.llm_model}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -966,6 +1039,14 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
           <PatientHistorySummaryCard data={ui.data} />
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
+      );  
+
+    case "public_health_answer":
+      return (
+        <PublicHealthAnswerCard
+          data={ui.data}
+          message={ui.data?.answer}
+        />
       );  
 
     default:
