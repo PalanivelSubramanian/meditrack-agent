@@ -2,6 +2,7 @@ PROTECTED_INTENT_PERMISSIONS = {
     "search_patient": "search_patient",
     "view_patient_history": "view_patient_history",
     "patient_context_followup": "view_patient_history",
+    "summarize_patient_history": "view_patient_history",
     "book_appointment": "book_appointment",
     "cancel_appointment": "cancel_appointment",
     "reschedule_appointment": "reschedule_appointment",
