@@ -674,6 +674,73 @@ function UpcomingAppointmentsCard({
   );
 }
 
+function AppointmentCancelResultCard({ data }: { data: any }) {
+  const appointment = data.appointment;
+
+  if (!appointment) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+        <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+          Appointment cancellation
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">Appointment not found</div>
+
+        <div className="mt-2 text-red-800">
+          No appointment matched the provided appointment ID.
+        </div>
+      </div>
+    );
+  }
+
+  const isCancelled = appointment.status === "cancelled";
+
+  return (
+    <div
+      className={
+        isCancelled
+          ? "rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-950"
+          : "rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+      }
+    >
+      <div
+        className={
+          isCancelled
+            ? "text-xs font-semibold uppercase tracking-wide text-green-700"
+            : "text-xs font-semibold uppercase tracking-wide text-amber-700"
+        }
+      >
+        Appointment cancellation
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        {isCancelled ? "Appointment cancelled" : "Appointment not cancellable"}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-white/70 bg-white p-3">
+        <div className="font-medium">
+          Appointment ID: {appointment.appointment_id}
+        </div>
+
+        {appointment.appointment_date && (
+          <div className="mt-1 text-xs">
+            Date: {appointment.appointment_date}
+          </div>
+        )}
+
+        {appointment.start_time && (
+          <div className="text-xs">
+            Time: {appointment.start_time}
+            {appointment.end_time ? `-${appointment.end_time}` : ""}
+          </div>
+        )}
+
+        <div className="text-xs">Status: {appointment.status}</div>
+      </div>
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -773,6 +840,38 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
       return (
         <>
           <UpcomingAppointmentsCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );  
+
+        case "appointment_cancelled":
+      return (
+        <>
+          <AppointmentCancelResultCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "appointment_not_found":
+      return (
+        <>
+          <AppointmentCancelResultCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "appointment_not_cancellable":
+      return (
+        <>
+          <AppointmentCancelResultCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "missing_appointment_id":
+      return (
+        <>
+          <AppointmentCancelResultCard data={ui.data} />
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
       );  
