@@ -19,7 +19,10 @@ from app.services.intent_service import detect_intent
 from app.services.audit_service import log_audit_event
 from app.models.chat import ChatSession
 from app.tools.patient_history_tools import get_patient_history_tool
-from app.tools.appointment_tools import find_upcoming_patient_appointments_tool
+from app.tools.appointment_tools import (
+    find_upcoming_patient_appointments_tool,
+    cancel_appointment_tool,
+)
 
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -217,6 +220,33 @@ def build_appointment_lookup_response(appointment_result: dict) -> dict:
         "ui_data": {
             "patient": appointment_result["patient"],
             "appointments": appointment_result["appointments"],
+        },
+    }
+
+def build_cancel_appointment_response(cancel_result: dict) -> dict:
+    if cancel_result["status"] == "not_found":
+        return {
+            "ui_type": "appointment_not_found",
+            "message": cancel_result["message"],
+            "ui_data": {
+                "appointment": None,
+            },
+        }
+
+    if cancel_result["status"] == "not_cancellable":
+        return {
+            "ui_type": "appointment_not_cancellable",
+            "message": cancel_result["message"],
+            "ui_data": {
+                "appointment": cancel_result["appointment"],
+            },
+        }
+
+    return {
+        "ui_type": "appointment_cancelled",
+        "message": cancel_result["message"],
+        "ui_data": {
+            "appointment": cancel_result["appointment"],
         },
     }
 
@@ -575,6 +605,96 @@ def chat_message(
                             selected_patient_id=chat_session.selected_patient_id,
                             audit_event="PATIENT_CONTEXT_FOLLOWUP",
                             workflow_result=history_result["ui_type"],
+                        ),
+                    },
+                ),
+            )
+
+        if intent == "cancel_appointment":
+            appointment_id = intent_result.entities.get("appointment_id")
+
+            if not appointment_id:
+                assistant_message = "Please provide an appointment ID to cancel."
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    intent_entities=intent_result.entities,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="missing_appointment_id",
+                        data={
+                            "required_permission": access_decision.required_permission,
+                            "agent_trace": build_agent_trace(
+                                intent=intent,
+                                access_status=access_decision.status,
+                                required_permission=access_decision.required_permission,
+                                tool_used=None,
+                                selected_patient_id=None,
+                                audit_event=None,
+                                workflow_result="missing_appointment_id",
+                            ),
+                        },
+                    ),
+                )
+
+            cancel_result = cancel_appointment_tool(
+                db=db,
+                appointment_id=int(appointment_id),
+            )
+
+            workflow_result = build_cancel_appointment_response(cancel_result)
+
+            log_audit_event(
+                db=db,
+                action_type="CANCEL_APPOINTMENT",
+                user_id=user.id if user else None,
+                entity_type="appointment",
+                entity_id=appointment_id,
+                permission_checked=access_decision.required_permission,
+                access_granted=workflow_result["ui_type"] == "appointment_cancelled",
+                details=(
+                    f"Cancel appointment result={workflow_result['ui_type']}, "
+                    f"appointment_id={appointment_id}"
+                ),
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=workflow_result["message"],
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=workflow_result["message"],
+                intent=intent,
+                intent_entities=intent_result.entities,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=workflow_result["ui_type"],
+                    data={
+                        **workflow_result["ui_data"],
+                        "required_permission": access_decision.required_permission,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="cancel_appointment_tool",
+                            selected_patient_id=None,
+                            audit_event="CANCEL_APPOINTMENT",
+                            workflow_result=workflow_result["ui_type"],
                         ),
                     },
                 ),

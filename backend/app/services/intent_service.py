@@ -95,6 +95,11 @@ APPOINTMENT_MANAGEMENT_PATTERNS = [
     r"^list appointments for (?P<patient_query>.+)$",
 ]
 
+CANCEL_APPOINTMENT_ID_PATTERNS = [
+    r"^cancel appointment (?P<appointment_id>\d+)$",
+    r"^cancel appointment id (?P<appointment_id>\d+)$",
+    r"^cancel booking (?P<appointment_id>\d+)$",
+]
 
 def clean_patient_query(query: str) -> str:
     query = query.strip()
@@ -194,6 +199,17 @@ def detect_intent(message: str) -> IntentResult:
                 confidence=0.95,
                 entities={
                     "patient_query": patient_query,
+                },
+            )
+
+    for pattern in CANCEL_APPOINTMENT_ID_PATTERNS:
+        match = re.search(pattern, normalized)
+        if match:
+            return IntentResult(
+                intent="cancel_appointment",
+                confidence=0.95,
+                entities={
+                    "appointment_id": int(match.group("appointment_id")),
                 },
             )
 

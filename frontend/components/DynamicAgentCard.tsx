@@ -578,6 +578,102 @@ function AgentTracePanel({ trace }: { trace: any }) {
   );
 }
 
+function UpcomingAppointmentsCard({
+  data,
+  onSendMessage,
+}: {
+  data: any;
+  onSendMessage?: (message: string) => void;
+}) {
+  const patient = data.patient;
+  const appointments = data.appointments ?? [];
+
+  if (!patient) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+        <div className="font-semibold">Patient not found</div>
+        <div className="mt-1 text-red-800">
+          No matching patient was found for this appointment workflow.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
+      <div className="mb-3">
+        <div className="text-xs font-semibold uppercase tracking-wide text-cyan-700">
+          Upcoming appointments
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">{patient.full_name}</div>
+
+        <div className="text-xs text-cyan-800">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+          {patient.phone_ending ? ` · Phone ending ${patient.phone_ending}` : ""}
+        </div>
+      </div>
+
+      {appointments.length === 0 ? (
+        <div className="rounded-xl border border-cyan-100 bg-white p-3 text-cyan-800">
+          No upcoming scheduled appointments found.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {appointments.map((appointment: any) => (
+            <div
+              key={appointment.appointment_id}
+              className="rounded-xl border border-cyan-100 bg-white p-3"
+            >
+              <div className="font-medium">
+                {appointment.appointment_date} · {appointment.start_time}
+                {appointment.end_time ? `-${appointment.end_time}` : ""}
+              </div>
+
+              {appointment.doctor_name && (
+                <div className="text-xs text-cyan-700">
+                  Doctor: {appointment.doctor_name}
+                </div>
+              )}
+
+              {appointment.specialization && (
+                <div className="text-xs text-cyan-700">
+                  Specialization: {appointment.specialization}
+                </div>
+              )}
+
+              {appointment.reason && (
+                <div className="mt-1 text-cyan-900">
+                  Reason: {appointment.reason}
+                </div>
+              )}
+
+              <div className="mt-1 text-xs text-cyan-700">
+                Status: {appointment.status}
+              </div>
+
+              {onSendMessage && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onSendMessage(
+                      `Cancel appointment ${appointment.appointment_id}`
+                    )
+                  }
+                  className="mt-3 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700"
+                >
+                  Cancel appointment
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function DynamicAgentCard({ ui, onSendMessage }: Props) {
   switch (ui.type) {
     case "auth_required":
@@ -653,6 +749,33 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
       ); 
+
+        case "upcoming_appointments":
+      return (
+        <>
+          <UpcomingAppointmentsCard
+            data={ui.data}
+            onSendMessage={onSendMessage}
+          />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "no_upcoming_appointments":
+      return (
+        <>
+          <UpcomingAppointmentsCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "appointment_patient_not_found":
+      return (
+        <>
+          <UpcomingAppointmentsCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );  
 
     default:
       return null;
