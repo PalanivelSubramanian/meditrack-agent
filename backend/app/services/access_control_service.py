@@ -7,6 +7,7 @@ PROTECTED_INTENT_PERMISSIONS = {
     "reschedule_appointment": "reschedule_appointment",
     "check_doctor_availability": "check_doctor_availability",
     "create_reminder": "create_reminder",
+    "manage_appointment": "cancel_appointment",
 }
 
 
