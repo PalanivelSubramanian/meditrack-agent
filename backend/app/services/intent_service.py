@@ -114,6 +114,24 @@ PATIENT_HISTORY_SUMMARY_PATTERNS = [
     r"^summary for (?P<patient_query>.+?) history$",
 ]
 
+PATIENT_REGISTRATION_PATTERNS = [
+    r"^register patient (?P<full_name>[a-zA-Z ]+) dob (?P<date_of_birth>\d{4}-\d{2}-\d{2}) phone (?P<phone>[0-9+\-\s]+) gender (?P<gender>male|female|other|unknown)$",
+    r"^register new patient (?P<full_name>[a-zA-Z ]+) dob (?P<date_of_birth>\d{4}-\d{2}-\d{2}) phone (?P<phone>[0-9+\-\s]+) gender (?P<gender>male|female|other|unknown)$",
+    r"^register patient (?P<full_name>[a-zA-Z ]+) date of birth (?P<date_of_birth>\d{4}-\d{2}-\d{2}) phone (?P<phone>[0-9+\-\s]+) gender (?P<gender>male|female|other|unknown)$",
+    r"^register new patient (?P<full_name>[a-zA-Z ]+) date of birth (?P<date_of_birth>\d{4}-\d{2}-\d{2}) phone (?P<phone>[0-9+\-\s]+) gender (?P<gender>male|female|other|unknown)$",
+]
+
+def split_full_name(full_name: str) -> tuple[str | None, str | None]:
+    parts = full_name.strip().split()
+
+    if len(parts) < 2:
+        return None, None
+
+    first_name = parts[0]
+    last_name = " ".join(parts[1:])
+
+    return first_name, last_name
+
 def clean_patient_query(query: str) -> str:
     query = query.strip()
 
@@ -203,6 +221,34 @@ def detect_intent(message: str) -> IntentResult:
                 confidence=0.85,
                 entities={
                     "followup_text": normalized,
+                },
+            )
+
+    for pattern in PATIENT_REGISTRATION_PATTERNS:
+        match = re.search(pattern, normalized)
+        if match:
+            full_name = match.group("full_name").strip()
+            first_name, last_name = split_full_name(full_name)
+
+            if not first_name or not last_name:
+                return IntentResult(
+                    intent="register_patient",
+                    confidence=0.7,
+                    entities={
+                        "registration_status": "missing_last_name",
+                        "full_name": full_name,
+                    },
+                )
+
+            return IntentResult(
+                intent="register_patient",
+                confidence=0.95,
+                entities={
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "date_of_birth": match.group("date_of_birth"),
+                    "phone": match.group("phone").strip(),
+                    "gender": match.group("gender"),
                 },
             )
 

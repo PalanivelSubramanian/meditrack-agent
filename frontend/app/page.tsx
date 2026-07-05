@@ -270,6 +270,8 @@ export default function Home() {
                     <DynamicAgentCard
                       ui={message.response.ui}
                       onSendMessage={sendMessage}
+                      onFillInput={setInput}
+                      accessToken={user?.accessToken}
                     />
                   </div>
                 )}

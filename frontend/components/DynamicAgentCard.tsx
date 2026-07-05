@@ -1,8 +1,17 @@
 import type { ChatUI, PatientHistoryUIData } from "@/types/chat";
+import { useState } from "react";
+import { patientRegistrationFields } from "@/config/patientRegistrationFields";
+import {
+  registerPatient,
+  type PatientRegistrationPayload,
+  type PatientRegistrationResponse,
+} from "@/lib/api";
 
 type Props = {
   ui: ChatUI;
   onSendMessage?: (message: string) => void;
+  onFillInput?: (message: string) => void;
+  accessToken?: string;
 };
 
 function CardShell({
@@ -890,7 +899,328 @@ function PublicHealthAnswerCard({ data, message }: { data: any; message?: string
   );
 }
 
-export function DynamicAgentCard({ ui, onSendMessage }: Props) {
+function PatientRegistrationCard({ data }: { data: any }) {
+  const patient = data.patient;
+  const missingFields = data.missing_fields ?? [];
+  const status = data.status;
+
+  if (missingFields.length > 0) {
+    return (
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+        <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+          Patient registration
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">
+          Missing required fields
+        </div>
+
+        <div className="mt-2 text-amber-800">
+          Please provide: {missingFields.join(", ")}
+        </div>
+
+        <div className="mt-3 rounded-xl border border-amber-100 bg-white p-3 text-xs text-amber-800">
+          Example: Register patient Arun Kumar DOB 1990-01-15 phone 9876543210 gender male
+        </div>
+      </div>
+    );
+  }
+
+  if (!patient) {
+    return (
+      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-950">
+        <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+          Patient registration
+        </div>
+
+        <div className="mt-1 text-lg font-semibold">
+          Registration details invalid
+        </div>
+
+        <div className="mt-2 text-red-800">
+          Status: {status ?? "invalid"}
+        </div>
+
+        <div className="mt-3 rounded-xl border border-red-100 bg-white p-3 text-xs text-red-800">
+          Use this format: Register patient First Last DOB YYYY-MM-DD phone 9876543210 gender male
+        </div>
+      </div>
+    );
+  }
+
+  const isDuplicate = data.required_permission && data.agent_trace?.workflow_result === "patient_registration_duplicate";
+
+  return (
+    <div
+      className={
+        isDuplicate
+          ? "rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+          : "rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-950"
+      }
+    >
+      <div
+        className={
+          isDuplicate
+            ? "text-xs font-semibold uppercase tracking-wide text-amber-700"
+            : "text-xs font-semibold uppercase tracking-wide text-green-700"
+        }
+      >
+        Patient registration
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        {isDuplicate ? "Possible duplicate patient" : "Patient registered"}
+      </div>
+
+      <div className="mt-3 rounded-xl border border-white/70 bg-white p-3">
+        <div className="font-medium">{patient.full_name}</div>
+
+        <div className="mt-1 text-xs">
+          Patient number: {patient.patient_number}
+        </div>
+
+        {patient.date_of_birth && (
+          <div className="text-xs">DOB: {patient.date_of_birth}</div>
+        )}
+
+        {patient.gender && (
+          <div className="text-xs">Gender: {patient.gender}</div>
+        )}
+
+        {patient.phone_ending && (
+          <div className="text-xs">
+            Phone ending: {patient.phone_ending}
+          </div>
+        )}
+      </div>
+
+      {isDuplicate && (
+        <div className="mt-3 rounded-xl border border-amber-100 bg-white p-3 text-xs text-amber-800">
+          A patient with the same name and date of birth already exists. Review before creating another record.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PatientNotFoundCard({
+  data,
+  accessToken,
+}: {
+  data: any;
+  accessToken?: string;
+}) {
+  const [showRegistrationForm, setShowRegistrationForm] = useState(false);
+  const query = data.query ?? "this patient";
+
+  if (showRegistrationForm) {
+    return (
+      <PatientRegistrationFormCard
+        initialQuery={query}
+        accessToken={accessToken}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+        No patient found
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        Patient is not registered
+      </div>
+
+      <div className="mt-2 text-amber-800">
+        No registered patient matched “{query}”.
+      </div>
+
+      <div className="mt-3 rounded-xl border border-amber-100 bg-white p-3 text-xs text-amber-800">
+        To register, provide first name, last name, date of birth, phone number,
+        and gender.
+      </div>
+
+      <button
+        type="button"
+        onClick={() => setShowRegistrationForm(true)}
+        className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+      >
+        Register new patient
+      </button>
+    </div>
+  );
+}
+
+function PatientRegistrationFormCard({
+  initialQuery,
+  accessToken,
+}: {
+  initialQuery?: string;
+  accessToken?: string;
+}) {
+  const nameParts = (initialQuery ?? "").trim().split(/\s+/).filter(Boolean);
+
+  const initialFirstName = nameParts.length >= 1 ? nameParts[0] : "";
+  const initialLastName =
+    nameParts.length >= 2 ? nameParts.slice(1).join(" ") : "";
+
+  const [formData, setFormData] = useState<Record<string, string>>({
+    first_name: initialFirstName,
+    last_name: initialLastName,
+    date_of_birth: "",
+    gender: "unknown",
+    phone: "",
+  });
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [result, setResult] = useState<PatientRegistrationResponse | null>(
+    null
+  );
+
+  function updateField(name: string, value: string) {
+    setFormData((current) => ({
+      ...current,
+      [name]: value,
+    }));
+  }
+
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setIsSubmitting(true);
+    setSubmitError(null);
+    setResult(null);
+
+    try {
+      const payload: PatientRegistrationPayload = {
+        first_name: formData.first_name ?? "",
+        last_name: formData.last_name ?? "",
+        date_of_birth: formData.date_of_birth ?? "",
+        gender: formData.gender ?? "",
+        phone: formData.phone ?? "",
+      };
+
+      const response = await registerPatient(payload, accessToken);
+      setResult(response);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error ? error.message : "Patient registration failed"
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  if (result) {
+    const mappedData = {
+      patient: result.patient,
+      missing_fields: result.missing_fields,
+      status: result.status,
+      agent_trace: {
+        intent: "register_patient",
+        access_status:
+          result.status === "auth_required" || result.status === "access_denied"
+            ? "access_denied"
+            : "access_granted",
+        required_permission: "search_patient",
+        tool_used: "structured /patients/register",
+        selected_patient_id: result.patient?.patient_id ?? null,
+        audit_event: "PATIENT_REGISTRATION",
+        workflow_result:
+          result.status === "created"
+            ? "patient_registered"
+            : result.status === "duplicate_possible"
+              ? "patient_registration_duplicate"
+              : "patient_registration_invalid",
+      },
+    };
+
+    return (
+      <>
+        <PatientRegistrationCard data={mappedData} />
+        <AgentTracePanel trace={mappedData.agent_trace} />
+      </>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+      <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+        New patient registration
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        Enter patient details
+      </div>
+
+      <div className="mt-2 text-blue-800">
+        Required fields are generated from the patient registration config.
+      </div>
+
+      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+        {patientRegistrationFields.map((field) => (
+          <div key={field.name}>
+            <label className="block text-xs font-semibold text-blue-900">
+              {field.label}
+              {field.required && <span className="text-red-600"> *</span>}
+            </label>
+
+            {field.type === "select" ? (
+              <select
+                value={formData[field.name] ?? ""}
+                required={field.required}
+                onChange={(event) =>
+                  updateField(field.name, event.target.value)
+                }
+                className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+              >
+                {(field.options ?? []).map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                type={field.type}
+                value={formData[field.name] ?? ""}
+                required={field.required}
+                placeholder={field.placeholder}
+                onChange={(event) =>
+                  updateField(field.name, event.target.value)
+                }
+                className="mt-1 w-full rounded-lg border border-blue-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-500"
+              />
+            )}
+          </div>
+        ))}
+
+        {submitError && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+            {submitError}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSubmitting ? "Registering..." : "Submit registration"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export function DynamicAgentCard({
+  ui,
+  onSendMessage,
+  onFillInput,
+  accessToken,
+}: Props) {
   switch (ui.type) {
     case "auth_required":
       return <AuthRequiredCard data={ui.data} />;
@@ -922,18 +1252,6 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
           <PatientHistoryCard data={ui.data as PatientHistoryUIData} />
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
-      );
-
-    case "patient_no_match":
-    case "booking_patient_no_match":
-      return <SimpleStatusCard title="No patient found" data={ui.data} />;
-
-    case "history_patient_no_match":
-      return (
-        <SimpleStatusCard
-          title="No patient history found"
-          data={ui.data}
-        />
       );
 
     case "booking_slot_unavailable":
@@ -1046,6 +1364,73 @@ export function DynamicAgentCard({ ui, onSendMessage }: Props) {
         <PublicHealthAnswerCard
           data={ui.data}
           message={ui.data?.answer}
+        />
+      );  
+
+        case "patient_registered":
+      return (
+        <>
+          <PatientRegistrationCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "patient_registration_duplicate":
+      return (
+        <>
+          <PatientRegistrationCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "patient_registration_missing_fields":
+      return (
+        <>
+          <PatientRegistrationCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "patient_registration_invalid":
+      return (
+        <>
+          <PatientRegistrationCard data={ui.data} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );  
+
+    case "patient_no_match":
+      return (
+        <PatientNotFoundCard
+          data={ui.data}
+          accessToken={accessToken}
+        />
+      );
+
+    case "no_patient_found":
+      return (
+        <PatientNotFoundCard
+          data={ui.data}
+          accessToken={accessToken}
+        />
+      );
+
+    case "history_patient_no_match":
+      return (
+        <>
+          <PatientNotFoundCard
+            data={ui.data}
+            accessToken={accessToken}
+          />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+    
+    case "patient_registration_form":
+      return (
+        <PatientRegistrationFormCard
+          initialQuery={ui.data?.query}
+          accessToken={accessToken}
         />
       );  
 

@@ -82,6 +82,36 @@ export type AuditLogItem = {
   created_at: string;
 };
 
+export type PatientRegistrationPayload = {
+  first_name: string;
+  last_name: string;
+  date_of_birth: string;
+  gender: string;
+  phone: string;
+};
+
+export type PatientRegistrationResponse = {
+  status:
+    | "created"
+    | "duplicate_possible"
+    | "missing_fields"
+    | "invalid_date"
+    | "invalid_gender"
+    | "invalid_phone"
+    | "auth_required"
+    | "access_denied";
+  message?: string;
+  missing_fields?: string[];
+  patient?: {
+    patient_id: number;
+    patient_number: string;
+    full_name: string;
+    date_of_birth?: string;
+    gender?: string;
+    phone_ending?: string;
+  };
+};
+
 export async function fetchAuditLogs(accessToken?: string): Promise<AuditLogItem[]> {
   if (!accessToken) {
     throw new Error("Login required to view audit logs.");
@@ -100,4 +130,26 @@ export async function fetchAuditLogs(accessToken?: string): Promise<AuditLogItem
   }
 
   return response.json();
+}
+
+export async function registerPatient(
+  payload: PatientRegistrationPayload,
+  accessToken?: string
+): Promise<PatientRegistrationResponse> {
+  const response = await fetch(`${API_BASE_URL}/patients/register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(data.detail ?? data.message ?? "Patient registration failed");
+  }
+
+  return data;
 }

@@ -25,6 +25,7 @@ from app.tools.appointment_tools import (
 )
 from app.agents.patient_history_summary_graph import run_patient_history_summary_graph
 from app.services.llm_service import answer_public_health_question_with_llm
+from app.tools.patient_registration_tools import register_patient_tool
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -251,6 +252,48 @@ def build_cancel_appointment_response(cancel_result: dict) -> dict:
         },
     }
 
+def build_patient_registration_response(registration_result: dict) -> dict:
+    if registration_result["status"] == "created":
+        return {
+            "ui_type": "patient_registered",
+            "message": registration_result["message"],
+            "ui_data": {
+                "patient": registration_result["patient"],
+            },
+        }
+
+    if registration_result["status"] == "duplicate_possible":
+        return {
+            "ui_type": "patient_registration_duplicate",
+            "message": registration_result["message"],
+            "ui_data": {
+                "patient": registration_result["patient"],
+            },
+        }
+
+    if registration_result["status"] == "missing_fields":
+        return {
+            "ui_type": "patient_registration_missing_fields",
+            "message": (
+                "Patient registration is missing required fields: "
+                + ", ".join(registration_result["missing_fields"])
+            ),
+            "ui_data": {
+                "missing_fields": registration_result["missing_fields"],
+            },
+        }
+
+    return {
+        "ui_type": "patient_registration_invalid",
+        "message": registration_result.get(
+            "message",
+            "Patient registration details are invalid.",
+        ),
+        "ui_data": {
+            "status": registration_result["status"],
+        },
+    }
+
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
     payload: ChatMessageRequest,
@@ -428,6 +471,76 @@ def chat_message(
                         **patient_result.ui_data,
                         "required_permission": access_decision.required_permission,
                         "user_role": user.role.role_name if user else None,
+                    },
+                ),
+            )
+
+        if intent == "register_patient":
+            registration_payload = {
+                "first_name": intent_result.entities.get("first_name"),
+                "last_name": intent_result.entities.get("last_name"),
+                "date_of_birth": intent_result.entities.get("date_of_birth"),
+                "gender": intent_result.entities.get("gender"),
+                "phone": intent_result.entities.get("phone"),
+            }
+
+            registration_result = register_patient_tool(
+                db=db,
+                payload=registration_payload,
+            )
+
+            workflow_result = build_patient_registration_response(
+                registration_result=registration_result,
+            )
+
+            patient_entity_id = None
+
+            if registration_result["status"] in ["created", "duplicate_possible"]:
+                patient_entity_id = registration_result["patient"]["patient_id"]
+
+            log_audit_event(
+                db=db,
+                action_type="PATIENT_REGISTRATION",
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=patient_entity_id,
+                permission_checked=access_decision.required_permission,
+                access_granted=registration_result["status"] == "created",
+                details=(
+                    f"Patient registration result={registration_result['status']}, "
+                    f"first_name='{registration_payload.get('first_name')}', "
+                    f"last_name='{registration_payload.get('last_name')}'"
+                ),
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=workflow_result["message"],
+                intent=intent,
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=workflow_result["message"],
+                intent=intent,
+                intent_entities=intent_result.entities,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=workflow_result["ui_type"],
+                    data={
+                        **workflow_result["ui_data"],
+                        "required_permission": access_decision.required_permission,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used="register_patient_tool",
+                            selected_patient_id=patient_entity_id,
+                            audit_event="PATIENT_REGISTRATION",
+                            workflow_result=workflow_result["ui_type"],
+                        ),
                     },
                 ),
             )
