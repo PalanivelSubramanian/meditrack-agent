@@ -726,7 +726,10 @@ def chat_message(
                 workflow_result = {
                     "ui_type": patient_result["ui_type"],
                     "message": patient_result["message"],
-                    "ui_data": patient_result["ui_data"],
+                    "ui_data": {
+                        **patient_result["ui_data"],
+                        "selection_context": "appointment_lookup",
+                    },
                 }
 
             log_audit_event(

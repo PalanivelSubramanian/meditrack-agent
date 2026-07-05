@@ -363,10 +363,19 @@ function HistoryPatientMatchesCard({
             {onSendMessage && (
               <button
                 type="button"
-                onClick={() => onSendMessage(`Select ${patient.patient_number}`)}
+                onClick={() => {
+                  if (data.selection_context === "appointment_lookup") {
+                    onSendMessage(`Show appointments for ${patient.patient_number}`);
+                    return;
+                  }
+
+                  onSendMessage(`Select ${patient.patient_number}`);
+                }}
                 className="mt-3 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
               >
-                View history
+                {data.selection_context === "appointment_lookup"
+                  ? "View appointments"
+                  : "View history"}
               </button>
             )}
           </div>
