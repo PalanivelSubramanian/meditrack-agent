@@ -26,6 +26,8 @@ from app.tools.appointment_tools import (
 from app.agents.patient_history_summary_graph import run_patient_history_summary_graph
 from app.services.llm_service import answer_public_health_question_with_llm
 from app.tools.patient_registration_tools import register_patient_tool
+from app.services.llm_intent_router import classify_intent_with_llm
+from app.services.appointment_reason_service import suggest_specialization_for_reason
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -294,6 +296,80 @@ def build_patient_registration_response(registration_result: dict) -> dict:
         },
     }
 
+def should_try_llm_intent_router(intent: str, confidence: float) -> bool:
+    if intent in ["unknown", "fallback"]:
+        return True
+
+    if intent == "public_health_question" and confidence < 0.85:
+        return True
+
+    return False
+
+def build_booking_reason_needed_response(intent_result, access_decision) -> dict:
+    patient_query = (
+        intent_result.entities.get("patient_query")
+        or intent_result.entities.get("patient_name")
+        or intent_result.entities.get("patient")
+        or ""
+    )
+
+    return {
+        "ui_type": "booking_reason_needed",
+        "message": (
+            f"I can help book an appointment for {patient_query}. "
+            "What is the reason for the appointment?"
+            if patient_query
+            else "What is the reason for the appointment?"
+        ),
+        "ui_data": {
+            "patient_query": patient_query,
+            "known_entities": intent_result.entities,
+            "required_permission": access_decision.required_permission,
+            "next_step": "collect_appointment_reason",
+            "examples": [
+                "chest pain",
+                "fever",
+                "diabetes follow-up",
+                "skin rash",
+                "eye pain",
+                "routine check-up",
+            ],
+        },
+    }
+
+def save_workflow_state(db: Session, chat_session: ChatSession, workflow_state: dict | None) -> None:
+    chat_session.workflow_state = workflow_state
+    db.add(chat_session)
+    db.commit()
+    db.refresh(chat_session)
+
+def build_specialization_suggestion_response(
+    reason_result: dict,
+    workflow_state: dict,
+) -> dict:
+    patient_query = workflow_state.get("patient_query", "")
+
+    specialization = reason_result["suggested_specialization"].replace("_", " ")
+
+    return {
+        "ui_type": "booking_specialization_suggested",
+        "message": (
+            f"Based on the appointment reason, {specialization} may be appropriate. "
+            "Do you want to check availability?"
+        ),
+        "ui_data": {
+            "patient_query": patient_query,
+            "appointment_reason": reason_result["reason"],
+            "suggested_specialization": reason_result["suggested_specialization"],
+            "suggested_specialization_label": specialization.title(),
+            "confidence": reason_result["confidence"],
+            "urgency": reason_result["urgency"],
+            "red_flags": reason_result["red_flags"],
+            "patient_message": reason_result["patient_message"],
+            "next_step": "confirm_specialization",
+        },
+    }
+
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
     payload: ChatMessageRequest,
@@ -302,16 +378,6 @@ def chat_message(
 ):
     user, permissions = get_optional_user_context(credentials, db)
 
-    intent_result = detect_intent(payload.message)
-    intent = intent_result.intent
-
-    access_agent = AccessControlAgent()
-    access_decision = access_agent.evaluate(
-        intent=intent,
-        user=user,
-        permissions=permissions,
-    )
-
     session_type = "clinic_operations" if user else "public_health_chat"
 
     chat_session = get_or_create_chat_session(
@@ -319,6 +385,129 @@ def chat_message(
         session_id=payload.session_id,
         user_id=user.id if user else None,
         session_type=session_type,
+    )
+
+    existing_workflow_state = chat_session.workflow_state or {}
+
+    if (
+        existing_workflow_state.get("workflow") == "appointment_booking"
+        and existing_workflow_state.get("step") == "collect_reason"
+    ):
+        appointment_reason = payload.message.strip()
+
+        reason_result = suggest_specialization_for_reason(appointment_reason)
+
+        updated_workflow_state = {
+            **existing_workflow_state,
+            "step": "confirm_specialization",
+            "appointment_reason": appointment_reason,
+            "suggested_specialization": reason_result["suggested_specialization"],
+            "reason_result": reason_result,
+        }
+
+        save_workflow_state(
+            db=db,
+            chat_session=chat_session,
+            workflow_state=updated_workflow_state,
+        )
+
+        workflow_result = build_specialization_suggestion_response(
+            reason_result=reason_result,
+            workflow_state=updated_workflow_state,
+        )
+
+        save_chat_message(
+            db=db,
+            session_id=chat_session.id,
+            sender="user",
+            message=payload.message,
+            intent="appointment_reason",
+        )
+
+        log_audit_event(
+            db=db,
+            action_type="APPOINTMENT_REASON_CAPTURED",
+            user_id=user.id if user else None,
+            entity_type="appointment",
+            entity_id=None,
+            permission_checked="book_appointment",
+            access_granted=True,
+            details=(
+                f"Appointment reason captured. "
+                f"patient_query='{updated_workflow_state.get('patient_query')}', "
+                f"reason='{appointment_reason}', "
+                f"suggested_specialization='{reason_result['suggested_specialization']}', "
+                f"urgency='{reason_result['urgency']}'"
+            ),
+        )
+
+        save_chat_message(
+            db=db,
+            session_id=chat_session.id,
+            sender="assistant",
+            message=workflow_result["message"],
+            intent="appointment_reason",
+        )
+
+        return ChatMessageResponse(
+            session_id=chat_session.id,
+            message=workflow_result["message"],
+            intent="appointment_reason",
+            intent_entities={
+                "appointment_reason": appointment_reason,
+                "patient_query": updated_workflow_state.get("patient_query"),
+                "suggested_specialization": reason_result["suggested_specialization"],
+            },
+            requires_auth=False,
+            ui=ChatUIResponse(
+                type=workflow_result["ui_type"],
+                data={
+                    **workflow_result["ui_data"],
+                    "required_permission": "book_appointment",
+                    "agent_trace": build_agent_trace(
+                        intent="appointment_reason",
+                        access_status="access_granted",
+                        required_permission="book_appointment",
+                        tool_used="suggest_specialization_for_reason",
+                        selected_patient_id=None,
+                        audit_event="APPOINTMENT_REASON_CAPTURED",
+                        workflow_result=workflow_result["ui_type"],
+                    ),
+                },
+            ),
+        )
+
+    intent_result = detect_intent(payload.message)
+
+    intent_source = "deterministic"
+
+    if should_try_llm_intent_router(
+        intent=intent_result.intent,
+        confidence=intent_result.confidence,
+    ):
+        llm_intent_result = classify_intent_with_llm(
+            message=payload.message,
+            selected_patient_available=chat_session.selected_patient_id is not None,
+        )
+
+        if (
+            llm_intent_result["intent"] != "unknown"
+            and llm_intent_result["confidence"] >= 0.70
+        ):
+            intent_result.intent = llm_intent_result["intent"]
+            intent_result.confidence = llm_intent_result["confidence"]
+            intent_result.entities = llm_intent_result["entities"]
+            intent_source = "llm"
+        else:
+            intent_source = llm_intent_result.get("intent_source", "llm")
+
+    intent = intent_result.intent
+
+    access_agent = AccessControlAgent()
+    access_decision = access_agent.evaluate(
+        intent=intent,
+        user=user,
+        permissions=permissions,
     )
 
     save_chat_message(
@@ -1049,6 +1238,82 @@ def chat_message(
             )
 
         if intent == "book_appointment":
+            patient_query = (
+                intent_result.entities.get("patient_query")
+                or intent_result.entities.get("patient_name")
+                or intent_result.entities.get("patient")
+            )
+
+            specialization = intent_result.entities.get("specialization")
+            appointment_reason = (
+                intent_result.entities.get("reason")
+                or intent_result.entities.get("appointment_reason")
+                or intent_result.entities.get("symptom")
+                or intent_result.entities.get("problem")
+            )
+
+            if patient_query and not specialization and not appointment_reason:
+                workflow_result = build_booking_reason_needed_response(
+                    intent_result=intent_result,
+                    access_decision=access_decision,
+                )
+
+                save_workflow_state(
+                    db=db,
+                    chat_session=chat_session,
+                    workflow_state={
+                        "workflow": "appointment_booking",
+                        "step": "collect_reason",
+                        "patient_query": patient_query,
+                        "entities": intent_result.entities,
+                    },
+                )
+
+                log_audit_event(
+                    db=db,
+                    action_type="BOOK_APPOINTMENT_REASON_NEEDED",
+                    user_id=user.id if user else None,
+                    entity_type="appointment",
+                    entity_id=None,
+                    permission_checked=access_decision.required_permission,
+                    access_granted=True,
+                    details=(
+                        "Appointment booking paused to collect reason. "
+                        f"patient_query='{patient_query}', entities={intent_result.entities}"
+                    ),
+                )
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=workflow_result["message"],
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=workflow_result["message"],
+                    intent=intent,
+                    intent_entities=intent_result.entities,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type=workflow_result["ui_type"],
+                        data={
+                            **workflow_result["ui_data"],
+                            "agent_trace": build_agent_trace(
+                                intent=intent,
+                                access_status=access_decision.status,
+                                required_permission=access_decision.required_permission,
+                                tool_used=None,
+                                selected_patient_id=None,
+                                audit_event="BOOK_APPOINTMENT_REASON_NEEDED",
+                                workflow_result=workflow_result["ui_type"],
+                            ),
+                        },
+                    ),
+                )
+
             scheduling_agent = SchedulingAgent()
             scheduling_result = scheduling_agent.book_from_entities(
                 db=db,
@@ -1244,7 +1509,9 @@ def chat_message(
         intent=intent,
     )
 
-    ui_data = {}
+    ui_data = {
+        "intent_source": intent_source,
+    }
 
     if intent == "public_health_question":
         ui_data = {
@@ -1252,6 +1519,7 @@ def chat_message(
             "llm_status": public_health_result["status"],
             "llm_model": public_health_result["model"],
             "safety_scope": "general_health_information_only",
+            "intent_source": intent_source,
         }
 
     return ChatMessageResponse(

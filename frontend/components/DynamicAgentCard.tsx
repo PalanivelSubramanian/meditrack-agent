@@ -1215,6 +1215,156 @@ function PatientRegistrationFormCard({
   );
 }
 
+function BookingReasonNeededCard({
+  data,
+  onSendMessage,
+}: {
+  data: any;
+  onSendMessage?: (message: string) => void;
+}) {
+  const patientQuery = data.patient_query ?? "selected patient";
+  const examples: string[] = data.examples ?? [];
+
+  return (
+    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+      <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+        Appointment booking
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        Appointment reason needed
+      </div>
+
+      <div className="mt-2 text-blue-800">
+        Patient: <span className="font-semibold">{patientQuery}</span>
+      </div>
+
+      <div className="mt-3 rounded-xl border border-blue-100 bg-white p-3 text-sm text-blue-900">
+        What is the reason for the appointment?
+      </div>
+
+      {examples.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+            Examples
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-2">
+            {examples.map((example) => (
+              <button
+                key={example}
+                type="button"
+                onClick={() => onSendMessage?.(example)}
+                className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
+              >
+                {example}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-3 text-xs text-blue-700">
+        The next step will suggest an appropriate doctor specialization.
+      </div>
+    </div>
+  );
+}
+
+function BookingSpecializationSuggestedCard({
+  data,
+  onSendMessage,
+}: {
+  data: any;
+  onSendMessage?: (message: string) => void;
+}) {
+  const patientQuery = data.patient_query ?? "selected patient";
+  const reason = data.appointment_reason ?? "appointment reason";
+  const specialization =
+    data.suggested_specialization_label ??
+    data.suggested_specialization ??
+    "General Medicine";
+  const urgency = data.urgency ?? "routine";
+  const redFlags: string[] = data.red_flags ?? [];
+  const patientMessage = data.patient_message;
+  const specializationValue =
+    data.suggested_specialization ?? String(specialization).toLowerCase();
+
+  return (
+    <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-950">
+      <div className="text-xs font-semibold uppercase tracking-wide text-purple-700">
+        Appointment booking
+      </div>
+
+      <div className="mt-1 text-lg font-semibold">
+        Suggested specialization
+      </div>
+
+      <div className="mt-3 rounded-xl border border-purple-100 bg-white p-3">
+        <div>
+          Patient: <span className="font-semibold">{patientQuery}</span>
+        </div>
+
+        <div className="mt-1">
+          Reason: <span className="font-semibold">{reason}</span>
+        </div>
+
+        <div className="mt-1">
+          Suggested doctor type:{" "}
+          <span className="font-semibold">{specialization}</span>
+        </div>
+
+        <div className="mt-1">
+          Urgency:{" "}
+          <span className="font-semibold capitalize">{urgency}</span>
+        </div>
+      </div>
+
+      {patientMessage && (
+        <div className="mt-3 rounded-xl border border-purple-100 bg-white p-3 text-purple-900">
+          {patientMessage}
+        </div>
+      )}
+
+      {redFlags.length > 0 && (
+        <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-red-900">
+          <div className="text-xs font-semibold uppercase tracking-wide text-red-700">
+            Red flags
+          </div>
+
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+            {redFlags.map((flag) => (
+              <li key={flag}>{flag}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            onSendMessage?.(
+              `Check ${specializationValue} availability tomorrow`
+            )
+          }
+          className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+        >
+          Check availability tomorrow
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onSendMessage?.("I want to choose another specialization")}
+          className="rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
+        >
+          Choose another specialization
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DynamicAgentCard({
   ui,
   onSendMessage,
@@ -1432,6 +1582,28 @@ export function DynamicAgentCard({
           initialQuery={ui.data?.query}
           accessToken={accessToken}
         />
+      );
+      
+    case "booking_reason_needed":
+      return (
+        <>
+          <BookingReasonNeededCard
+            data={ui.data}
+            onSendMessage={onSendMessage}
+          />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );  
+
+    case "booking_specialization_suggested":
+      return (
+        <>
+          <BookingSpecializationSuggestedCard
+            data={ui.data}
+            onSendMessage={onSendMessage}
+          />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
       );  
 
     default:
