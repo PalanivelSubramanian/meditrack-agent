@@ -299,7 +299,7 @@ def build_patient_registration_response(registration_result: dict) -> dict:
     }
 
 def should_try_llm_intent_router(intent: str, confidence: float) -> bool:
-    if intent in ["unknown", "fallback"]:
+    if intent in ["unknown", "fallback", "general_assistant"]:
         return True
 
     if intent == "public_health_question" and confidence < 0.85:
@@ -492,6 +492,8 @@ def chat_message(
     intent_result = detect_intent(payload.message)
 
     intent_source = "deterministic"
+    intent_router_reason = None
+    intent_router_confidence = intent_result.confidence
 
     if should_try_llm_intent_router(
         intent=intent_result.intent,
@@ -501,6 +503,9 @@ def chat_message(
             message=payload.message,
             selected_patient_available=chat_session.selected_patient_id is not None,
         )
+
+        intent_router_reason = llm_intent_result.get("reason")
+        intent_router_confidence = llm_intent_result.get("confidence")
 
         if (
             llm_intent_result["intent"] != "unknown"
@@ -1599,6 +1604,8 @@ def chat_message(
 
     ui_data = {
         "intent_source": intent_source,
+        "intent_router_confidence": intent_router_confidence,
+        "intent_router_reason": intent_router_reason,
     }
 
     if intent == "public_health_question":
@@ -1608,6 +1615,8 @@ def chat_message(
             "llm_model": public_health_result["model"],
             "safety_scope": "general_health_information_only",
             "intent_source": intent_source,
+            "intent_router_confidence": intent_router_confidence,
+            "intent_router_reason": intent_router_reason,
         }
 
     return ChatMessageResponse(

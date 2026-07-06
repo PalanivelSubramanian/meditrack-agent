@@ -126,6 +126,37 @@ def _extract_json_object(text: str) -> dict[str, Any]:
     return json.loads(cleaned[start : end + 1])
 
 
+SYMPTOM_MARKERS = [
+    "hurt", "hurts", "pain", "ache", "aches", "fever", "cough",
+    "dizzy", "dizziness", "nausea", "vomit", "vomiting", "rash",
+    "bleeding", "breath", "breathing", "headache", "sore", "swollen",
+]
+
+RECORD_MARKERS = [
+    "medication", "medications", "meds", "diagnosis", "diagnoses",
+    "visit", "visits", "note", "notes", "history", "record", "chart",
+    "clinical", "current patient", "selected patient", "this patient",
+]
+
+
+def _apply_symptom_vs_record_guard(message: str, sanitized: dict[str, Any]) -> dict[str, Any]:
+    if sanitized["intent"] != "patient_context_followup":
+        return sanitized
+
+    normalized = message.lower()
+
+    has_symptom_marker = any(marker in normalized for marker in SYMPTOM_MARKERS)
+    has_record_marker = any(marker in normalized for marker in RECORD_MARKERS)
+
+    if has_symptom_marker and not has_record_marker:
+        sanitized["intent"] = "public_health_question"
+        sanitized["reason"] = (
+            "Guard override: symptom question without explicit record/chart keywords."
+        )
+
+    return sanitized
+
+
 def _sanitize_llm_router_result(raw_result: dict[str, Any]) -> dict[str, Any]:
     intent = str(raw_result.get("intent", "unknown")).strip()
 
@@ -191,14 +222,14 @@ Rules:
 2. Use "unknown" if the message does not match a clinic workflow or general health question.
 3. If the user asks whether a patient exists, wants to find a patient, or asks if the clinic has someone, use "search_patient".
 4. If the user asks to open, show, or view history for a patient, use "view_patient_history".
-5. If the user asks for medications, diagnoses, visits, or notes and a patient is already selected, use "patient_context_followup".
+5. Use "patient_context_followup" ONLY when the user explicitly asks about the selected patient's chart or record, such as medications, diagnoses, visits, or clinical notes (e.g. "show medications", "show diagnoses", "what is in the selected patient history"). A patient being selected does NOT by itself turn a general symptom or health question into "patient_context_followup".
 6. If the user asks to summarize patient history, use "summarize_patient_history".
 7. If the user asks about doctor availability, use "check_doctor_availability".
 8. If the user asks to book/schedule an appointment, use "book_appointment".
 9. If the user asks to show/list appointments for a patient, use "manage_appointment".
 10. If the user asks to cancel appointment by ID, use "cancel_appointment".
 11. If the user gives full new patient registration details, use "register_patient".
-12. If the user asks general symptoms or general health education, use "public_health_question".
+12. If the user asks general symptoms or general health education (e.g. "my arm hurts", "I have chest pain", "what should I do for fever"), use "public_health_question", even if a patient is currently selected.
 13. If the user asks to clear selected/current patient context, use "clear_patient_context".
 14. Preserve patient names exactly from the user message where possible.
 15. Extract dates only if clearly present.
@@ -237,7 +268,9 @@ Return this exact JSON shape:
         raw_text = response.output_text
         raw_result = _extract_json_object(raw_text)
 
-        return _sanitize_llm_router_result(raw_result)
+        sanitized_result = _sanitize_llm_router_result(raw_result)
+
+        return _apply_symptom_vs_record_guard(message, sanitized_result)
 
     except Exception as exc:
         return {
