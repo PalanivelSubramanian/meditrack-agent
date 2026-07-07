@@ -606,6 +606,27 @@ function AgentTracePanel({ trace }: { trace: any }) {
           </div>
         )}
 
+        {trace.intent_source && (
+          <div>
+            <span className="font-semibold">Intent source:</span>{" "}
+            {trace.intent_source}
+          </div>
+        )}
+
+        {trace.intent_confidence != null && (
+          <div>
+            <span className="font-semibold">Confidence:</span>{" "}
+            {trace.intent_confidence}
+          </div>
+        )}
+
+        {trace.router_reason && (
+          <div>
+            <span className="font-semibold">Router reason:</span>{" "}
+            {trace.router_reason}
+          </div>
+        )}
+
         {trace.access_status && (
           <div>
             <span className="font-semibold">Access:</span>{" "}
@@ -646,6 +667,16 @@ function AgentTracePanel({ trace }: { trace: any }) {
             {trace.workflow_result}
           </div>
         )}
+
+        {trace.intent_entities &&
+          Object.keys(trace.intent_entities).length > 0 && (
+            <div>
+              <span className="font-semibold">Entities:</span>
+              <pre className="mt-1 overflow-x-auto rounded-lg bg-slate-50 p-2 text-[11px]">
+                {JSON.stringify(trace.intent_entities, null, 2)}
+              </pre>
+            </div>
+          )}
       </div>
     </details>
   );
@@ -1345,6 +1376,22 @@ function BookingSpecializationSuggestedCard({
   const specializationValue =
     data.suggested_specialization ?? String(specialization).toLowerCase();
 
+  const [showSpecializationChooser, setShowSpecializationChooser] =
+    useState(false);
+
+  const specializationOptions = [
+    { value: "cardiology", label: "Cardiology" },
+    { value: "dermatology", label: "Dermatology" },
+    { value: "endocrinology", label: "Endocrinology" },
+    { value: "general_medicine", label: "General Medicine" },
+    { value: "neurology", label: "Neurology" },
+    { value: "ophthalmology", label: "Ophthalmology" },
+    { value: "orthopedics", label: "Orthopedics" },
+    { value: "pediatrics", label: "Pediatrics" },
+    { value: "psychiatry", label: "Psychiatry" },
+    { value: "pulmonology", label: "Pulmonology" },
+  ];
+
   return (
     <div className="rounded-2xl border border-purple-200 bg-purple-50 p-4 text-sm text-purple-950">
       <div className="text-xs font-semibold uppercase tracking-wide text-purple-700">
@@ -1410,12 +1457,47 @@ function BookingSpecializationSuggestedCard({
 
         <button
           type="button"
-          onClick={() => onSendMessage?.("I want to choose another specialization")}
+          onClick={() => setShowSpecializationChooser(true)}
           className="rounded-lg border border-purple-200 bg-white px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
         >
           Choose another specialization
         </button>
       </div>
+
+      {showSpecializationChooser && (
+        <div className="mt-3 rounded-xl border border-purple-100 bg-white p-3">
+          <div className="text-sm font-semibold text-purple-900">
+            Choose another specialization
+          </div>
+
+          <div className="mt-1 text-xs text-purple-700">
+            Select the doctor type you want to check availability for.
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {specializationOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() =>
+                  onSendMessage?.(`Check ${option.value} availability tomorrow`)
+                }
+                className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowSpecializationChooser(false)}
+            className="mt-3 text-xs font-semibold text-purple-700 underline hover:text-purple-900"
+          >
+            Keep suggested specialization
+          </button>
+        </div>
+      )}
     </div>
   );
 }

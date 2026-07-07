@@ -226,8 +226,8 @@ Rules:
 6. If the user asks to summarize patient history, use "summarize_patient_history".
 7. If the user asks about doctor availability, use "check_doctor_availability".
 8. If the user asks to book/schedule an appointment, use "book_appointment".
-9. If the user asks to show/list appointments for a patient, use "manage_appointment".
-10. If the user asks to cancel appointment by ID, use "cancel_appointment".
+9. If the user asks to show, list, view, or check (but NOT cancel) appointments, use "manage_appointment", even if no patient name is given (e.g. "show appointments", "list appointments", "view appointments", "check appointments", "show upcoming appointments") — use "manage_appointment" with empty entities or without patient_query in that case, and the backend will ask for the missing patient.
+10. If the user asks to cancel an appointment, use "cancel_appointment", whether or not an appointment ID is given — the backend will ask for the ID if it is missing. Do not use "manage_appointment" for cancellation requests.
 11. If the user gives full new patient registration details, use "register_patient".
 12. If the user asks general symptoms or general health education (e.g. "my arm hurts", "I have chest pain", "what should I do for fever"), use "public_health_question", even if a patient is currently selected.
 13. If the user asks to clear selected/current patient context, use "clear_patient_context".

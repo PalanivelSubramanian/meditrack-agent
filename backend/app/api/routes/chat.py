@@ -138,6 +138,9 @@ def build_agent_trace(
     audit_event: str | None = None,
     workflow_result: str | None = None,
     intent_source: str | None = None,
+    intent_confidence: float | None = None,
+    router_reason: str | None = None,
+    intent_entities: dict | None = None,
 ) -> dict:
     return {
         "intent": intent,
@@ -148,6 +151,9 @@ def build_agent_trace(
         "selected_patient_id": selected_patient_id,
         "audit_event": audit_event,
         "workflow_result": workflow_result,
+        "intent_confidence": intent_confidence,
+        "router_reason": router_reason,
+        "intent_entities": intent_entities,
     }
 
 @router.post("/clear-patient-context")
@@ -381,6 +387,60 @@ def is_booking_confirm_specialization_state(workflow_state: dict | None) -> bool
         and workflow_state.get("step") == "confirm_specialization"
     )
 
+REQUIRED_ENTITIES_BY_INTENT = {
+    "search_patient": ["patient_query"],
+    "view_patient_history": ["patient_query"],
+    "cancel_appointment": ["appointment_id"],
+}
+
+MISSING_ENTITY_MESSAGES = {
+    "search_patient": (
+        "Please provide a patient name, phone number, date of birth, "
+        "or patient number to search."
+    ),
+    "view_patient_history": "Please provide which patient history to view.",
+    "cancel_appointment": "Please provide an appointment ID to cancel.",
+}
+
+def validate_required_entities(
+    intent: str,
+    entities: dict,
+    chat_session: ChatSession | None = None,
+) -> dict:
+    """
+    Validate only critical entities needed before workflow execution.
+    Return {"valid": True} or a structured invalid response.
+
+    Intents not listed in REQUIRED_ENTITIES_BY_INTENT (patient_context_followup,
+    summarize_patient_history, book_appointment, public_health_question,
+    register_patient, manage_appointment) are intentionally not blocked here:
+    they already have their own branch-level or workflow-staged handling
+    downstream.
+    """
+
+    required_entities = REQUIRED_ENTITIES_BY_INTENT.get(intent)
+
+    if not required_entities:
+        return {"valid": True}
+
+    missing_entities = [
+        required_entity
+        for required_entity in required_entities
+        if not entities.get(required_entity)
+    ]
+
+    if not missing_entities:
+        return {"valid": True}
+
+    return {
+        "valid": False,
+        "missing_entities": missing_entities,
+        "message": MISSING_ENTITY_MESSAGES.get(
+            intent,
+            "Please provide the missing details to continue.",
+        ),
+    }
+
 @router.post("/message", response_model=ChatMessageResponse)
 def chat_message(
     payload: ChatMessageRequest,
@@ -484,6 +544,7 @@ def chat_message(
                         audit_event="APPOINTMENT_REASON_CAPTURED",
                         workflow_result=workflow_result["ui_type"],
                         intent_source="workflow_state",
+                        router_reason="Continuing appointment booking workflow from chat_session.workflow_state.",
                     ),
                 },
             ),
@@ -492,7 +553,7 @@ def chat_message(
     intent_result = detect_intent(payload.message)
 
     intent_source = "deterministic"
-    intent_router_reason = None
+    intent_router_reason = "Matched deterministic intent rules."
     intent_router_confidence = intent_result.confidence
 
     if should_try_llm_intent_router(
@@ -613,6 +674,69 @@ def chat_message(
         )
 
     if access_decision.status == "access_granted":
+        entity_validation = validate_required_entities(
+            intent=intent,
+            entities=intent_result.entities,
+            chat_session=chat_session,
+        )
+
+        if not entity_validation["valid"]:
+            assistant_message = entity_validation["message"]
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=assistant_message,
+                intent=intent,
+            )
+
+            log_audit_event(
+                db=db,
+                action_type="MISSING_REQUIRED_ENTITIES",
+                user_id=user.id if user else None,
+                entity_type="chat",
+                entity_id=chat_session.id,
+                permission_checked=access_decision.required_permission,
+                access_granted=False,
+                details=(
+                    f"Missing required entities for intent={intent}, "
+                    f"missing={entity_validation['missing_entities']}, "
+                    f"entities={intent_result.entities}"
+                ),
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=assistant_message,
+                intent=intent,
+                intent_entities=intent_result.entities,
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type="missing_required_entities",
+                    data={
+                        "intent": intent,
+                        "missing_entities": entity_validation["missing_entities"],
+                        "intent_entities": intent_result.entities,
+                        "required_permission": access_decision.required_permission,
+                        "intent_source": intent_source,
+                        "agent_trace": build_agent_trace(
+                            intent=intent,
+                            access_status=access_decision.status,
+                            required_permission=access_decision.required_permission,
+                            tool_used=None,
+                            selected_patient_id=None,
+                            audit_event="MISSING_REQUIRED_ENTITIES",
+                            workflow_result="missing_required_entities",
+                            intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
+                        ),
+                    },
+                ),
+            )
+
         if intent == "search_patient":
             patient_query = intent_result.entities.get("patient_query")
 
@@ -690,6 +814,9 @@ def chat_message(
                             audit_event="PATIENT_SEARCH",
                             workflow_result=patient_result.ui_type,
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -761,6 +888,9 @@ def chat_message(
                             audit_event="PATIENT_REGISTRATION",
                             workflow_result=workflow_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -826,6 +956,9 @@ def chat_message(
                             audit_event="PATIENT_HISTORY_VIEW",
                             workflow_result=history_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -894,6 +1027,9 @@ def chat_message(
                                     audit_event="PATIENT_HISTORY_SUMMARY",
                                     workflow_result=workflow_result["ui_type"],
                                     intent_source=intent_source,
+                                    intent_confidence=intent_router_confidence,
+                                    router_reason=intent_router_reason,
+                                    intent_entities=intent_result.entities,
                                 ),
                             },
                         ),
@@ -931,6 +1067,9 @@ def chat_message(
                                     audit_event=None,
                                     workflow_result="patient_context_missing",
                                     intent_source=intent_source,
+                                    intent_confidence=intent_router_confidence,
+                                    router_reason=intent_router_reason,
+                                    intent_entities=intent_result.entities,
                                 ),
                             },
                         ),
@@ -985,6 +1124,9 @@ def chat_message(
                             audit_event="PATIENT_HISTORY_SUMMARY",
                             workflow_result=workflow_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -1101,6 +1243,9 @@ def chat_message(
                             audit_event="PATIENT_CONTEXT_FOLLOWUP",
                             workflow_result=history_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -1139,6 +1284,9 @@ def chat_message(
                                 audit_event=None,
                                 workflow_result="missing_appointment_id",
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                             ),
                         },
                     ),
@@ -1193,6 +1341,9 @@ def chat_message(
                             audit_event="CANCEL_APPOINTMENT",
                             workflow_result=workflow_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -1200,6 +1351,45 @@ def chat_message(
 
         if intent == "manage_appointment":
             patient_query = intent_result.entities.get("patient_query", "")
+
+            if not patient_query:
+                assistant_message = "Please provide a patient name or patient number to show appointments."
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent=intent,
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent=intent,
+                    intent_entities=intent_result.entities,
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="appointment_patient_query_missing",
+                        data={
+                            "required_permission": access_decision.required_permission,
+                            "intent_source": intent_source,
+                            "agent_trace": build_agent_trace(
+                                intent=intent,
+                                access_status=access_decision.status,
+                                required_permission=access_decision.required_permission,
+                                tool_used=None,
+                                selected_patient_id=None,
+                                audit_event=None,
+                                workflow_result="appointment_patient_query_missing",
+                                intent_source=intent_source,
+                                intent_confidence=intent_router_confidence,
+                                router_reason=intent_router_reason,
+                                intent_entities=intent_result.entities,
+                            ),
+                        },
+                    ),
+                )
 
             patient_history_agent = PatientHistoryAgent()
             patient_result = patient_history_agent.get_history_for_query(
@@ -1272,6 +1462,9 @@ def chat_message(
                             audit_event="APPOINTMENT_LOOKUP",
                             workflow_result=workflow_result["ui_type"],
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -1350,6 +1543,9 @@ def chat_message(
                                 audit_event="BOOK_APPOINTMENT_REASON_NEEDED",
                                 workflow_result=workflow_result["ui_type"],
                                 intent_source=intent_source,
+                                intent_confidence=intent_router_confidence,
+                                router_reason=intent_router_reason,
+                                intent_entities=intent_result.entities,
                             ),
                         },
                     ),
@@ -1420,6 +1616,9 @@ def chat_message(
                             audit_event="BOOK_APPOINTMENT",
                             workflow_result=scheduling_result.ui_type,
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
@@ -1551,6 +1750,9 @@ def chat_message(
                             audit_event="CHECK_DOCTOR_AVAILABILITY",
                             workflow_result=availability_result.ui_type,
                             intent_source=intent_source,
+                            intent_confidence=intent_router_confidence,
+                            router_reason=intent_router_reason,
+                            intent_entities=intent_result.entities,
                         ),
                     },
                 ),
