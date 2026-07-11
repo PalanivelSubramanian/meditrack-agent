@@ -160,57 +160,61 @@ export default function Home() {
 
           <AuditLogPanel user={user} />
 
-          <div className="rounded-xl border bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-slate-800">
-              Demo script
-            </div>
+          {false && (
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="text-sm font-semibold text-slate-800">
+                Demo script
+              </div>
 
-            <div className="mt-1 text-xs text-slate-500">
-              Recommended final project walkthrough.
-            </div>
+              <div className="mt-1 text-xs text-slate-500">
+                Recommended final project walkthrough.
+              </div>
 
-            <ol className="mt-3 list-decimal space-y-2 pl-4 text-xs text-slate-700">
-              <li>Login as receptionist using Employee ID + TOTP.</li>
-              <li>Search ambiguous patient: John Smith.</li>
-              <li>Select P10001 and view patient history.</li>
-              <li>Ask: What medications is he taking?</li>
-              <li>Ask: Summarize current patient history.</li>
-              <li>Click Clear patient, then ask medication follow-up again.</li>
-              <li>Show Aisha Rahman upcoming appointments.</li>
-              <li>Cancel appointment if a demo appointment exists.</li>
-              <li>Login as admin and refresh Audit viewer.</li>
-              <li>Show Agent trace and audit logs together.</li>
-            </ol>
-          </div>
-
-          <div className="rounded-xl border bg-white p-4 shadow-sm">
-            <div className="text-sm font-semibold text-slate-800">
-              Try workflows
+              <ol className="mt-3 list-decimal space-y-2 pl-4 text-xs text-slate-700">
+                <li>Login as receptionist using Employee ID + TOTP.</li>
+                <li>Search ambiguous patient: John Smith.</li>
+                <li>Select P10001 and view patient history.</li>
+                <li>Ask: What medications is he taking?</li>
+                <li>Ask: Summarize current patient history.</li>
+                <li>Click Clear patient, then ask medication follow-up again.</li>
+                <li>Show Aisha Rahman upcoming appointments.</li>
+                <li>Cancel appointment if a demo appointment exists.</li>
+                <li>Login as admin and refresh Audit viewer.</li>
+                <li>Show Agent trace and audit logs together.</li>
+              </ol>
             </div>
+          )}
 
-            <div className="mt-3 space-y-2">
-              {[
-                "What causes headache?",
-                "Search patient John Smith",
-                "Find patient Aisha Rahman",
-                "Which cardiologists are available tomorrow?",
-                "Show dermatology slots tomorrow",
-                "Book appointment for Aisha Rahman with cardiology tomorrow at 09:30",
-                "Show Aisha Rahman history",
-                "Show John Smith history",
-              ].map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  onClick={() => sendMessage(example)}
-                  disabled={isSending}
-                  className="w-full rounded-lg border px-3 py-2 text-left text-xs hover:bg-slate-50 disabled:opacity-50"
-                >
-                  {example}
-                </button>
-              ))}
+          {false && (
+            <div className="rounded-xl border bg-white p-4 shadow-sm">
+              <div className="text-sm font-semibold text-slate-800">
+                Try workflows
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {[
+                  "What causes headache?",
+                  "Search patient John Smith",
+                  "Find patient Aisha Rahman",
+                  "Which cardiologists are available tomorrow?",
+                  "Show dermatology slots tomorrow",
+                  "Book appointment for Aisha Rahman with cardiology tomorrow at 09:30",
+                  "Show Aisha Rahman history",
+                  "Show John Smith history",
+                ].map((example) => (
+                  <button
+                    key={example}
+                    type="button"
+                    onClick={() => sendMessage(example)}
+                    disabled={isSending}
+                    className="w-full rounded-lg border px-3 py-2 text-left text-xs hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {example}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </aside>
 
         <section className="flex h-[calc(100vh-3rem)] flex-col rounded-xl border bg-white shadow-sm">
@@ -272,6 +276,7 @@ export default function Home() {
                       onSendMessage={sendMessage}
                       onFillInput={setInput}
                       accessToken={user?.accessToken}
+                      sessionId={sessionId ?? undefined}
                     />
                   </div>
                 )}

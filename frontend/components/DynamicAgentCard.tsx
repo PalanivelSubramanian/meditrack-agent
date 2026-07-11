@@ -12,6 +12,7 @@ type Props = {
   onSendMessage?: (message: string) => void;
   onFillInput?: (message: string) => void;
   accessToken?: string;
+  sessionId?: number;
 };
 
 function CardShell({
@@ -47,8 +48,15 @@ function AuthRequiredCard({ data }: { data: Record<string, any> }) {
   );
 }
 
-function PatientMatchesCard({ data }: { data: Record<string, any> }) {
+function PatientMatchesCard({
+  data,
+  onSendMessage,
+}: {
+  data: Record<string, any>;
+  onSendMessage?: (message: string) => void;
+}) {
   const patients = data.patients || [];
+  const isBookingContext = data.booking_context === true;
 
   return (
     <CardShell title="Patient matches">
@@ -77,6 +85,18 @@ function PatientMatchesCard({ data }: { data: Record<string, any> }) {
             <div className="text-sm text-slate-600">
               Phone ending: {patient.phone_ending || "N/A"}
             </div>
+
+            {isBookingContext && onSendMessage && (
+              <button
+                type="button"
+                onClick={() =>
+                  onSendMessage(`Select ${patient.patient_number}`)
+                }
+                className="mt-2 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700"
+              >
+                Select for booking
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -1092,9 +1112,13 @@ function PatientRegistrationCard({ data }: { data: any }) {
 function PatientNotFoundCard({
   data,
   accessToken,
+  sessionId,
+  onSendMessage,
 }: {
   data: any;
   accessToken?: string;
+  sessionId?: number;
+  onSendMessage?: (message: string) => void;
 }) {
   const [showRegistrationForm, setShowRegistrationForm] = useState(false);
   const query = data.query ?? "this patient";
@@ -1104,6 +1128,8 @@ function PatientNotFoundCard({
       <PatientRegistrationFormCard
         initialQuery={query}
         accessToken={accessToken}
+        sessionId={sessionId}
+        onSendMessage={onSendMessage}
       />
     );
   }
@@ -1138,12 +1164,56 @@ function PatientNotFoundCard({
   );
 }
 
+function RegistrationBookingContinuationCard({
+  message,
+  onSendMessage,
+}: {
+  message: string;
+  onSendMessage?: (message: string) => void;
+}) {
+  const examples = [
+    "chest pain",
+    "fever",
+    "diabetes follow-up",
+    "skin rash",
+    "eye pain",
+    "routine check-up",
+  ];
+
+  return (
+    <div className="mt-3 rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
+      <div className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+        Continue appointment booking
+      </div>
+
+      <div className="mt-2 text-blue-900">{message}</div>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        {examples.map((example) => (
+          <button
+            key={example}
+            type="button"
+            onClick={() => onSendMessage?.(example)}
+            className="rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-blue-800 hover:bg-blue-100"
+          >
+            {example}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PatientRegistrationFormCard({
   initialQuery,
   accessToken,
+  sessionId,
+  onSendMessage,
 }: {
   initialQuery?: string;
   accessToken?: string;
+  sessionId?: number;
+  onSendMessage?: (message: string) => void;
 }) {
   const nameParts = (initialQuery ?? "").trim().split(/\s+/).filter(Boolean);
 
@@ -1186,6 +1256,7 @@ function PatientRegistrationFormCard({
         date_of_birth: formData.date_of_birth ?? "",
         gender: formData.gender ?? "",
         phone: formData.phone ?? "",
+        session_id: sessionId,
       };
 
       const response = await registerPatient(payload, accessToken);
@@ -1227,6 +1298,15 @@ function PatientRegistrationFormCard({
       <>
         <PatientRegistrationCard data={mappedData} />
         <AgentTracePanel trace={mappedData.agent_trace} />
+        {result.booking_workflow_resumed && (
+          <RegistrationBookingContinuationCard
+            message={
+              result.booking_message ??
+              "Patient registered. What is the reason for the appointment?"
+            }
+            onSendMessage={onSendMessage}
+          />
+        )}
       </>
     );
   }
@@ -1309,6 +1389,7 @@ function BookingReasonNeededCard({
   onSendMessage?: (message: string) => void;
 }) {
   const patientQuery = data.patient_query ?? "selected patient";
+  const patient = data.patient;
   const examples: string[] = data.examples ?? [];
 
   return (
@@ -1324,6 +1405,13 @@ function BookingReasonNeededCard({
       <div className="mt-2 text-blue-800">
         Patient: <span className="font-semibold">{patientQuery}</span>
       </div>
+
+      {patient && (
+        <div className="mt-2 rounded-lg border border-blue-100 bg-white p-2 text-xs text-blue-900">
+          {patient.patient_number}
+          {patient.date_of_birth ? ` · DOB ${patient.date_of_birth}` : ""}
+        </div>
+      )}
 
       <div className="mt-3 rounded-xl border border-blue-100 bg-white p-3 text-sm text-blue-900">
         What is the reason for the appointment?
@@ -1507,14 +1595,35 @@ export function DynamicAgentCard({
   onSendMessage,
   onFillInput,
   accessToken,
+  sessionId,
 }: Props) {
   switch (ui.type) {
     case "auth_required":
       return <AuthRequiredCard data={ui.data} />;
 
     case "patient_matches":
+      return <PatientMatchesCard data={ui.data} onSendMessage={onSendMessage} />;
+
     case "booking_patient_matches":
-      return <PatientMatchesCard data={ui.data} />;
+      return (
+        <>
+          <PatientMatchesCard data={ui.data} onSendMessage={onSendMessage} />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
+
+    case "booking_patient_not_found":
+      return (
+        <>
+          <PatientNotFoundCard
+            data={ui.data}
+            accessToken={accessToken}
+            sessionId={sessionId}
+            onSendMessage={onSendMessage}
+          />
+          <AgentTracePanel trace={ui.data?.agent_trace} />
+        </>
+      );
 
     case "history_patient_matches":
       return (
@@ -1696,6 +1805,8 @@ export function DynamicAgentCard({
         <PatientNotFoundCard
           data={ui.data}
           accessToken={accessToken}
+          sessionId={sessionId}
+          onSendMessage={onSendMessage}
         />
       );
 
@@ -1704,6 +1815,8 @@ export function DynamicAgentCard({
         <PatientNotFoundCard
           data={ui.data}
           accessToken={accessToken}
+          sessionId={sessionId}
+          onSendMessage={onSendMessage}
         />
       );
 
@@ -1713,16 +1826,20 @@ export function DynamicAgentCard({
           <PatientNotFoundCard
             data={ui.data}
             accessToken={accessToken}
+            sessionId={sessionId}
+            onSendMessage={onSendMessage}
           />
           <AgentTracePanel trace={ui.data?.agent_trace} />
         </>
       );
-    
+
     case "patient_registration_form":
       return (
         <PatientRegistrationFormCard
           initialQuery={ui.data?.query}
           accessToken={accessToken}
+          sessionId={sessionId}
+          onSendMessage={onSendMessage}
         />
       );
       

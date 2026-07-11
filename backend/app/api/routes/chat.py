@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -345,6 +347,45 @@ def build_booking_reason_needed_response(intent_result, access_decision) -> dict
         },
     }
 
+def build_booking_patient_lookup_response(patient_result) -> dict:
+    """
+    Shapes a PatientAgent search result into a booking-context UI response.
+
+    Used both when resolving the patient at the start of an appointment
+    booking request, and when continuing booking after an ambiguous
+    patient selection (chat_session.workflow_state.step == "select_patient").
+    """
+
+    if patient_result.ui_type == "patient_no_match":
+        return {
+            "ui_type": "booking_patient_not_found",
+            "message": patient_result.message,
+            "ui_data": {
+                **patient_result.ui_data,
+                "booking_context": True,
+            },
+        }
+
+    if patient_result.ui_type == "patient_matches":
+        return {
+            "ui_type": "booking_patient_matches",
+            "message": patient_result.message,
+            "ui_data": {
+                **patient_result.ui_data,
+                "booking_context": True,
+            },
+        }
+
+    return {
+        "ui_type": "booking_patient_resolved",
+        "message": patient_result.message,
+        "ui_data": {
+            **patient_result.ui_data,
+            "booking_context": True,
+        },
+    }
+
+
 def save_workflow_state(db: Session, chat_session: ChatSession, workflow_state: dict | None) -> None:
     chat_session.workflow_state = workflow_state
     db.add(chat_session)
@@ -549,6 +590,186 @@ def chat_message(
                 },
             ),
         )
+
+    if (
+        existing_workflow_state.get("workflow") == "appointment_booking"
+        and existing_workflow_state.get("step") == "select_patient"
+    ):
+        selection_match = re.match(
+            r"^(select|choose|open)\s+(?P<patient_query>p\d+)$",
+            payload.message.strip(),
+            flags=re.IGNORECASE,
+        )
+
+        if selection_match:
+            selected_patient_query = selection_match.group("patient_query")
+
+            patient_agent = PatientAgent()
+            patient_search_result = patient_agent.search_patient(
+                db, selected_patient_query
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="user",
+                message=payload.message,
+                intent="book_appointment",
+            )
+
+            if patient_search_result.ui_type == "patient_single_match":
+                resolved_patient = patient_search_result.ui_data["selected_patient"]
+
+                updated_workflow_state = {
+                    **existing_workflow_state,
+                    "step": "collect_reason",
+                    "patient_id": resolved_patient["patient_id"],
+                    "patient": resolved_patient,
+                }
+
+                save_workflow_state(
+                    db=db,
+                    chat_session=chat_session,
+                    workflow_state=updated_workflow_state,
+                )
+
+                assistant_message = (
+                    f"Selected {resolved_patient['full_name']}. "
+                    "What is the reason for the appointment?"
+                )
+
+                log_audit_event(
+                    db=db,
+                    action_type="BOOK_APPOINTMENT_REASON_NEEDED",
+                    user_id=user.id if user else None,
+                    entity_type="appointment",
+                    entity_id=None,
+                    permission_checked="book_appointment",
+                    access_granted=True,
+                    details=(
+                        "Patient selected for booking from ambiguous match. "
+                        f"patient_id={resolved_patient['patient_id']}, "
+                        f"patient_query='{updated_workflow_state.get('patient_query')}'"
+                    ),
+                )
+
+                save_chat_message(
+                    db=db,
+                    session_id=chat_session.id,
+                    sender="assistant",
+                    message=assistant_message,
+                    intent="book_appointment",
+                )
+
+                return ChatMessageResponse(
+                    session_id=chat_session.id,
+                    message=assistant_message,
+                    intent="book_appointment",
+                    requires_auth=False,
+                    ui=ChatUIResponse(
+                        type="booking_reason_needed",
+                        data={
+                            "patient_query": updated_workflow_state.get("patient_query"),
+                            "patient": resolved_patient,
+                            "known_entities": updated_workflow_state.get("entities", {}),
+                            "required_permission": "book_appointment",
+                            "next_step": "collect_appointment_reason",
+                            "examples": [
+                                "chest pain",
+                                "fever",
+                                "diabetes follow-up",
+                                "skin rash",
+                                "eye pain",
+                                "routine check-up",
+                            ],
+                            "agent_trace": build_agent_trace(
+                                intent="book_appointment",
+                                access_status="access_granted",
+                                required_permission="book_appointment",
+                                tool_used="PatientAgent.search_patient",
+                                selected_patient_id=resolved_patient["patient_id"],
+                                audit_event="BOOK_APPOINTMENT_REASON_NEEDED",
+                                workflow_result="booking_reason_needed",
+                                intent_source="workflow_state",
+                                router_reason="Continuing appointment booking workflow after ambiguous patient selection.",
+                            ),
+                        },
+                    ),
+                )
+
+            # Still ambiguous or no longer found: keep booking context and
+            # re-show the appropriate card so staff can retry the selection.
+            lookup_response = build_booking_patient_lookup_response(patient_search_result)
+
+            save_workflow_state(
+                db=db,
+                chat_session=chat_session,
+                workflow_state={
+                    **existing_workflow_state,
+                    "step": (
+                        "register_patient"
+                        if patient_search_result.ui_type == "patient_no_match"
+                        else "select_patient"
+                    ),
+                },
+            )
+
+            log_audit_event(
+                db=db,
+                action_type=(
+                    "BOOK_APPOINTMENT_PATIENT_NOT_FOUND"
+                    if patient_search_result.ui_type == "patient_no_match"
+                    else "BOOK_APPOINTMENT_PATIENT_AMBIGUOUS"
+                ),
+                user_id=user.id if user else None,
+                entity_type="patient",
+                entity_id=None,
+                permission_checked="book_appointment",
+                access_granted=False,
+                details=(
+                    f"Booking patient re-selection query='{selected_patient_query}', "
+                    f"result_type={patient_search_result.ui_type}"
+                ),
+            )
+
+            save_chat_message(
+                db=db,
+                session_id=chat_session.id,
+                sender="assistant",
+                message=lookup_response["message"],
+                intent="book_appointment",
+            )
+
+            return ChatMessageResponse(
+                session_id=chat_session.id,
+                message=lookup_response["message"],
+                intent="book_appointment",
+                requires_auth=False,
+                ui=ChatUIResponse(
+                    type=lookup_response["ui_type"],
+                    data={
+                        **lookup_response["ui_data"],
+                        "required_permission": "book_appointment",
+                        "agent_trace": build_agent_trace(
+                            intent="book_appointment",
+                            access_status="access_granted",
+                            required_permission="book_appointment",
+                            tool_used="PatientAgent.search_patient",
+                            selected_patient_id=None,
+                            audit_event=None,
+                            workflow_result=lookup_response["ui_type"],
+                            intent_source="workflow_state",
+                            router_reason="Re-attempted patient selection during appointment booking.",
+                        ),
+                    },
+                ),
+            )
+
+        # TODO(checkpoint 25B, item 5): only the "Select P<number>" button
+        # click (produced by the patient-matches card) is handled above.
+        # Free-text re-selection (e.g. retyping a full name) falls through
+        # to normal intent detection below rather than being specially
+        # routed back into the booking workflow.
 
     intent_result = detect_intent(payload.message)
 
@@ -1485,6 +1706,117 @@ def chat_message(
                 or intent_result.entities.get("problem")
             )
 
+            resolved_patient = None
+            resolved_patient_id = None
+
+            if patient_query:
+                patient_agent = PatientAgent()
+                patient_search_result = patient_agent.search_patient(db, patient_query)
+
+                log_audit_event(
+                    db=db,
+                    action_type="BOOK_APPOINTMENT_PATIENT_LOOKUP",
+                    user_id=user.id if user else None,
+                    entity_type="patient",
+                    entity_id=None,
+                    permission_checked=access_decision.required_permission,
+                    access_granted=True,
+                    details=(
+                        f"Booking patient lookup query='{patient_query}', "
+                        f"result_type={patient_search_result.ui_type}"
+                    ),
+                )
+
+                if patient_search_result.ui_type in ("patient_no_match", "patient_matches"):
+                    lookup_response = build_booking_patient_lookup_response(patient_search_result)
+
+                    save_workflow_state(
+                        db=db,
+                        chat_session=chat_session,
+                        workflow_state={
+                            "workflow": "appointment_booking",
+                            "step": (
+                                # TODO(checkpoint 25B, item 6): once patient
+                                # registration succeeds while workflow_state.step
+                                # == "register_patient", auto-advance to
+                                # step="collect_reason" using the new patient_id.
+                                # Deferred: registration is submitted through the
+                                # separate POST /patients/register REST endpoint
+                                # (patients.py), which has no session_id /
+                                # workflow_state context today. Wiring this up
+                                # would require adding an optional session_id
+                                # field to that endpoint and is out of scope for
+                                # this checkpoint's minimal-change requirement.
+                                "register_patient"
+                                if patient_search_result.ui_type == "patient_no_match"
+                                else "select_patient"
+                            ),
+                            "patient_query": patient_query,
+                            "entities": intent_result.entities,
+                        },
+                    )
+
+                    log_audit_event(
+                        db=db,
+                        action_type=(
+                            "BOOK_APPOINTMENT_PATIENT_NOT_FOUND"
+                            if patient_search_result.ui_type == "patient_no_match"
+                            else "BOOK_APPOINTMENT_PATIENT_AMBIGUOUS"
+                        ),
+                        user_id=user.id if user else None,
+                        entity_type="patient",
+                        entity_id=None,
+                        permission_checked=access_decision.required_permission,
+                        access_granted=False,
+                        details=(
+                            f"Booking patient resolution result={patient_search_result.ui_type}, "
+                            f"patient_query='{patient_query}'"
+                        ),
+                    )
+
+                    save_chat_message(
+                        db=db,
+                        session_id=chat_session.id,
+                        sender="assistant",
+                        message=lookup_response["message"],
+                        intent=intent,
+                    )
+
+                    return ChatMessageResponse(
+                        session_id=chat_session.id,
+                        message=lookup_response["message"],
+                        intent=intent,
+                        requires_auth=False,
+                        ui=ChatUIResponse(
+                            type=lookup_response["ui_type"],
+                            data={
+                                **lookup_response["ui_data"],
+                                "required_permission": access_decision.required_permission,
+                                "intent_source": intent_source,
+                                "agent_trace": build_agent_trace(
+                                    intent=intent,
+                                    access_status=access_decision.status,
+                                    required_permission=access_decision.required_permission,
+                                    tool_used="PatientAgent.search_patient",
+                                    selected_patient_id=None,
+                                    audit_event=(
+                                        "BOOK_APPOINTMENT_PATIENT_NOT_FOUND"
+                                        if patient_search_result.ui_type == "patient_no_match"
+                                        else "BOOK_APPOINTMENT_PATIENT_AMBIGUOUS"
+                                    ),
+                                    workflow_result=lookup_response["ui_type"],
+                                    intent_source=intent_source,
+                                    intent_confidence=intent_router_confidence,
+                                    router_reason=intent_router_reason,
+                                    intent_entities=intent_result.entities,
+                                ),
+                            },
+                        ),
+                    )
+
+                resolved_patient = patient_search_result.ui_data["selected_patient"]
+                resolved_patient_id = resolved_patient["patient_id"]
+
             if patient_query and not specialization and not appointment_reason:
                 workflow_result = build_booking_reason_needed_response(
                     intent_result=intent_result,
@@ -1497,7 +1829,9 @@ def chat_message(
                     workflow_state={
                         "workflow": "appointment_booking",
                         "step": "collect_reason",
+                        "patient_id": resolved_patient_id,
                         "patient_query": patient_query,
+                        "patient": resolved_patient,
                         "entities": intent_result.entities,
                     },
                 )
@@ -1511,8 +1845,9 @@ def chat_message(
                     permission_checked=access_decision.required_permission,
                     access_granted=True,
                     details=(
-                        "Appointment booking paused to collect reason. "
-                        f"patient_query='{patient_query}', entities={intent_result.entities}"
+                        "Appointment booking paused to collect reason after patient resolution. "
+                        f"patient_query='{patient_query}', patient_id={resolved_patient_id}, "
+                        f"entities={intent_result.entities}"
                     ),
                 )
 
@@ -1534,12 +1869,15 @@ def chat_message(
                         type=workflow_result["ui_type"],
                         data={
                             **workflow_result["ui_data"],
+                            "patient": resolved_patient,
                             "agent_trace": build_agent_trace(
                                 intent=intent,
                                 access_status=access_decision.status,
                                 required_permission=access_decision.required_permission,
-                                tool_used=None,
-                                selected_patient_id=None,
+                                tool_used=(
+                                    "PatientAgent.search_patient" if resolved_patient_id else None
+                                ),
+                                selected_patient_id=resolved_patient_id,
                                 audit_event="BOOK_APPOINTMENT_REASON_NEEDED",
                                 workflow_result=workflow_result["ui_type"],
                                 intent_source=intent_source,

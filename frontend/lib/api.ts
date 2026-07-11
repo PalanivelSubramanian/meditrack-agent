@@ -88,6 +88,7 @@ export type PatientRegistrationPayload = {
   date_of_birth: string;
   gender: string;
   phone: string;
+  session_id?: number;
 };
 
 export type PatientRegistrationResponse = {
@@ -110,6 +111,9 @@ export type PatientRegistrationResponse = {
     gender?: string;
     phone_ending?: string;
   };
+  booking_workflow_resumed?: boolean;
+  booking_next_step?: string;
+  booking_message?: string;
 };
 
 export async function fetchAuditLogs(accessToken?: string): Promise<AuditLogItem[]> {

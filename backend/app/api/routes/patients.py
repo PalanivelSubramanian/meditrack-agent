@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.security import decode_access_token
 from app.db.database import get_db
 from app.models.auth import User
+from app.models.chat import ChatSession
 from app.services.auth_service import get_user_permissions
 from app.services.audit_service import log_audit_event
 from app.tools.patient_registration_tools import register_patient_tool
@@ -21,6 +22,7 @@ class PatientRegistrationRequest(BaseModel):
     date_of_birth: str
     gender: str
     phone: str
+    session_id: int | None = None
 
 
 def get_current_user_and_permissions(
@@ -101,5 +103,54 @@ def register_patient(
             f"first_name='{payload.first_name}', last_name='{payload.last_name}'"
         ),
     )
+
+    registration_result["booking_workflow_resumed"] = False
+
+    if registration_result["status"] == "created" and payload.session_id:
+        chat_session = (
+            db.query(ChatSession)
+            .filter(ChatSession.id == payload.session_id)
+            .first()
+        )
+
+        workflow_state = chat_session.workflow_state if chat_session else None
+
+        if (
+            workflow_state
+            and workflow_state.get("workflow") == "appointment_booking"
+            and workflow_state.get("step") == "register_patient"
+        ):
+            updated_workflow_state = {
+                **workflow_state,
+                "step": "collect_reason",
+                "patient_id": registration_result["patient"]["patient_id"],
+                "patient_query": registration_result["patient"]["full_name"],
+            }
+
+            chat_session.workflow_state = updated_workflow_state
+            db.add(chat_session)
+            db.commit()
+            db.refresh(chat_session)
+
+            log_audit_event(
+                db=db,
+                action_type="BOOK_APPOINTMENT_REASON_NEEDED",
+                user_id=user.id,
+                entity_type="appointment",
+                entity_id=None,
+                permission_checked="book_appointment",
+                access_granted=True,
+                details=(
+                    "Appointment booking resumed after patient registration. "
+                    f"patient_id={registration_result['patient']['patient_id']}, "
+                    f"patient_query='{registration_result['patient']['full_name']}'"
+                ),
+            )
+
+            registration_result["booking_workflow_resumed"] = True
+            registration_result["booking_next_step"] = "collect_reason"
+            registration_result["booking_message"] = (
+                "Patient registered. What is the reason for the appointment?"
+            )
 
     return registration_result
