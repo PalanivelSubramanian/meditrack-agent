@@ -1,4 +1,5 @@
 import re
+from datetime import date, timedelta
 
 from app.schemas.chat import IntentResult
 
@@ -18,12 +19,14 @@ BOOK_APPOINTMENT_PATTERNS = [
     r"^schedule appointment for (?P<patient_query>.+?) with (?P<specialization>\w+) tomorrow at (?P<time>\d{1,2}:\d{2})$",
 ]
 
+DATE_TEXT_GROUP = r"(?:on )?(?P<date_text>today|tomorrow|\d{4}-\d{2}-\d{2})"
+
 AVAILABILITY_PATTERNS = [
-    r"^which (?P<specialization>\w+) doctors are available tomorrow\??$",
-    r"^which (?P<specialization>\w+) are available tomorrow\??$",
-    r"^check (?P<specialization>\w+) availability tomorrow$",
-    r"^show (?P<specialization>\w+) slots tomorrow$",
-    r"^find (?P<specialization>\w+) availability tomorrow$",
+    rf"^which (?P<specialization>\w+) doctors are available {DATE_TEXT_GROUP}\??$",
+    rf"^which (?P<specialization>\w+) are available {DATE_TEXT_GROUP}\??$",
+    rf"^check (?P<specialization>\w+) availability {DATE_TEXT_GROUP}$",
+    rf"^show (?P<specialization>\w+) slots {DATE_TEXT_GROUP}$",
+    rf"^find (?P<specialization>\w+) availability {DATE_TEXT_GROUP}$",
 ]
 
 PATIENT_HISTORY_PATTERNS = [
@@ -142,6 +145,21 @@ def clean_patient_query(query: str) -> str:
     return " ".join(query.split())
 
 
+def resolve_target_date(date_text: str) -> date | None:
+    normalized = (date_text or "").strip().lower()
+
+    if normalized == "today":
+        return date.today()
+
+    if normalized == "tomorrow":
+        return date.today() + timedelta(days=1)
+
+    try:
+        return date.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
 def normalize_specialization(value: str) -> str:
     value = value.lower().strip()
 
@@ -184,7 +202,7 @@ def detect_intent(message: str) -> IntentResult:
                 confidence=0.90,
                 entities={
                     "specialization": normalize_specialization(match.group("specialization")),
-                    "date_text": "tomorrow",
+                    "date_text": match.group("date_text"),
                 },
             )
 

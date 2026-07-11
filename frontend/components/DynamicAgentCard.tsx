@@ -1466,6 +1466,22 @@ function BookingSpecializationSuggestedCard({
 
   const [showSpecializationChooser, setShowSpecializationChooser] =
     useState(false);
+  const [dateChoice, setDateChoice] = useState<"today" | "tomorrow" | "custom">(
+    "tomorrow"
+  );
+  const [customDate, setCustomDate] = useState("");
+
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const resolvedDateText =
+    dateChoice === "custom" ? customDate || null : dateChoice;
+
+  const checkAvailability = (specializationForCheck: string) => {
+    if (!resolvedDateText) return;
+
+    onSendMessage?.(
+      `Check ${specializationForCheck} availability ${resolvedDateText}`
+    );
+  };
 
   const specializationOptions = [
     { value: "cardiology", label: "Cardiology" },
@@ -1530,17 +1546,36 @@ function BookingSpecializationSuggestedCard({
         </div>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select
+          value={dateChoice}
+          onChange={(event) =>
+            setDateChoice(event.target.value as typeof dateChoice)
+          }
+          className="rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs font-semibold text-purple-800"
+        >
+          <option value="today">Today</option>
+          <option value="tomorrow">Tomorrow</option>
+          <option value="custom">Choose a date...</option>
+        </select>
+
+        {dateChoice === "custom" && (
+          <input
+            type="date"
+            min={todayISO}
+            value={customDate}
+            onChange={(event) => setCustomDate(event.target.value)}
+            className="rounded-lg border border-purple-200 bg-white px-2 py-1.5 text-xs font-semibold text-purple-800"
+          />
+        )}
+
         <button
           type="button"
-          onClick={() =>
-            onSendMessage?.(
-              `Check ${specializationValue} availability tomorrow`
-            )
-          }
-          className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+          disabled={!resolvedDateText}
+          onClick={() => checkAvailability(specializationValue)}
+          className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Check availability tomorrow
+          Check availability
         </button>
 
         <button
@@ -1567,10 +1602,9 @@ function BookingSpecializationSuggestedCard({
               <button
                 key={option.value}
                 type="button"
-                onClick={() =>
-                  onSendMessage?.(`Check ${option.value} availability tomorrow`)
-                }
-                className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100"
+                disabled={!resolvedDateText}
+                onClick={() => checkAvailability(option.value)}
+                className="rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-800 hover:bg-purple-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {option.label}
               </button>
@@ -1637,6 +1671,7 @@ export function DynamicAgentCard({
       return <PatientSingleMatchCard data={ui.data} />;
 
     case "availability_slots":
+    case "booking_slot_selection_needed":
       return (
         <AvailabilitySlotsCard
           data={ui.data}
