@@ -4,6 +4,8 @@ from typing import Any
 
 from openai import OpenAI
 
+from app.services.appointment_reason_service import ALLOWED_SPECIALIZATIONS
+
 
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4.1-mini")
 
@@ -53,7 +55,7 @@ INTENT_ENTITY_GUIDE = {
         "required": ["specialization"],
         "example": {
             "specialization": "cardiology",
-            "date": "2026-07-10"
+            "date_text": "tomorrow"
         },
     },
     "book_appointment": {
@@ -61,7 +63,8 @@ INTENT_ENTITY_GUIDE = {
         "example": {
             "patient_query": "Palanivel Subramanian",
             "specialization": "cardiology",
-            "date": "2026-07-10"
+            "date_text": "tomorrow",
+            "time": "09:30"
         },
     },
     "manage_appointment": {
@@ -211,6 +214,29 @@ Do not make database changes.
 Do not invent patients, appointments, doctors, dates, or medical facts.
 Return JSON only.
 
+The user may write their message in any language, not just English. Understand the
+message regardless of language and classify it exactly as you would the same request
+written in English. However, every entity VALUE you return must still be normalized
+into the canonical English/ISO forms below (the rest of the system only understands
+these forms) — do not return specialization names, dates, or record-section names in
+the user's original language:
+- "specialization" must be translated to exactly one of: {sorted(ALLOWED_SPECIALIZATIONS)}
+- "date_text" must be normalized to exactly "today", "tomorrow", or an ISO date
+  ("YYYY-MM-DD") — translate relative date phrases in any language into one of these,
+  no matter the script. Example: Hindi "कल कार्डियोलॉजी की उपलब्धता जांचें" ("kal" =
+  tomorrow) must extract {{"specialization": "cardiology", "date_text": "tomorrow"}},
+  the same as the English "check cardiology availability tomorrow" would. Always
+  extract date_text whenever any date word is present, even a single word.
+- "followup_text" must be normalized to one of: "medications", "visits", "diagnoses",
+  or the original follow-up text if it doesn't clearly map to one of those.
+- "time", if a specific appointment time is given, must be normalized to 24-hour
+  "HH:MM" (e.g. Spanish "a las 9:30 de la manana" -> "09:30").
+- "reason" (the brief classification reason you return, not a clinical field) must
+  always be written in English regardless of the input language, since it is used in
+  internal logs.
+Patient names are the one exception: preserve them exactly as written, untranslated
+and untransliterated (see rule 14).
+
 Allowed intents:
 {sorted(ALLOWED_INTENTS)}
 
@@ -232,7 +258,7 @@ Rules:
 12. If the user asks general symptoms or general health education (e.g. "my arm hurts", "I have chest pain", "what should I do for fever"), use "public_health_question", even if a patient is currently selected.
 13. If the user asks to clear selected/current patient context, use "clear_patient_context".
 14. Preserve patient names exactly from the user message where possible.
-15. Extract dates only if clearly present.
+15. Extract dates only if clearly present, and normalize them per the entity-value rules above.
 16. For ambiguous requests, choose the safest intent and use lower confidence.
 
 Return this exact JSON shape:
